@@ -1,0 +1,13 @@
+PDF Nexus — visuels promotionnels
+
+fr : français / en : anglais
+
+petite-promotion-440x280.png : Petite image promotionnelle
+banniere-promotion-1400x560.png : Image promotionnelle en haut de la page
+
+Tous les fichiers sont des PNG RGB 24 bits, sans canal alpha.
+Importez les PNG de la langue correspondante dans la fiche du store.
+Le ZIP sert au téléchargement uniquement : décompressez-le avant l'import.
+
+Logo Nexus existant et capture réelle de l'éditeur sur un document fictif.
+Reproduction : node scripts/store-promo.mjs

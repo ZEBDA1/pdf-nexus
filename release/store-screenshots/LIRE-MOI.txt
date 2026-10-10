@@ -1,0 +1,10 @@
+PDF Nexus 1.6.5 — captures localisées
+
+5 captures réelles par langue (fr / en), PNG 1280 × 800.
+01 Accueil · 02 Saisie en direct · 03 Signature · 04 Assistant documentaire · 05 Conversion
+
+Document de démonstration fictif. Interface de production, sans retouche ni fonctionnalités simulées. L'assistant est utilisé en mode extractif local ; la conversion Word est réellement exécutée.
+
+Dans le Chrome Web Store, sélectionnez la langue de la fiche puis importez les cinq PNG du dossier correspondant dans « Captures d'écran localisées ». Ne mélangez pas les langues.
+Format : https://developer.chrome.com/docs/webstore/images/
+Reproduction : node scripts/store-screenshots.mjs (nécessite dist/ et Chromium Playwright).

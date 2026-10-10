@@ -1,0 +1,10 @@
+node_modules
+dist
+release
+test-results
+playwright-report
+public/vendor
+public/licenses
+public/licenses.json
+docs/LICENSES.md
+package-lock.json

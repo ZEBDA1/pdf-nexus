@@ -1,0 +1,15 @@
+node_modules/
+dist/
+release/*.zip
+release/pdf-nexus-captures-localisees/
+release/pdf-nexus-visuels-promotionnels/
+test-results/
+test-results-extension/
+playwright-report/
+scripts/i18n-missing.json
+.env*
+*.log
+.DS_Store
+Thumbs.db
+public/vendor/
+public/fonts/*.ttf

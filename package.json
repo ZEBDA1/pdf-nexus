@@ -1,0 +1,52 @@
+{
+  "name": "pdf-nexus",
+  "version": "1.6.6",
+  "author": "ZEBDA",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "assets": "node scripts/assets.mjs",
+    "build": "tsc --noEmit && vite build && node scripts/package.mjs",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "check": "npm run i18n:check && npm run test && npm run build",
+    "i18n:check": "node scripts/i18n-audit.mjs --check",
+    "licenses": "node scripts/licenses.mjs",
+    "prebuild": "node scripts/assets.mjs && node scripts/licenses.mjs",
+    "format": "prettier --write src tests scripts docs README.md *.json *.ts *.html",
+    "format:check": "prettier --check src tests scripts docs README.md *.json *.ts *.html"
+  },
+  "dependencies": {
+    "@pdf-lib/fontkit": "1.1.1",
+    "@xmldom/xmldom": "0.9.12",
+    "docx": "9.9.0",
+    "exceljs": "4.4.0",
+    "fflate": "0.8.3",
+    "idb": "8.0.4",
+    "lucide-react": "1.54.0",
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "6.4.299",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "tesseract.js": "7.0.0"
+  },
+  "devDependencies": {
+    "@babel/parser": "8.0.7",
+    "@playwright/test": "1.64.0",
+    "@types/chrome": "0.3.4",
+    "@types/node": "26.6.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "prettier": "3.9.9",
+    "typescript": "7.0.2",
+    "vite": "8.3.4",
+    "vitest": "5.0.3"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
+  }
+}

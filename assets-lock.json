@@ -1,0 +1,18 @@
+{
+  "vendor/ocr/eng.traineddata": {
+    "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/4.1.0/eng.traineddata",
+    "sha256": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2"
+  },
+  "vendor/ocr/fra.traineddata": {
+    "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/4.1.0/fra.traineddata",
+    "sha256": "ced037562e8c80c13122dece28dd477d399af80911a28791a66a63ac1e3445ca"
+  },
+  "fonts/NotoSans-Regular.ttf": {
+    "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf",
+    "sha256": "b85c38ecea8a7cfb39c24e395a4007474fa5a4fc864f6ee33309eb4948d232d5"
+  },
+  "fonts/OFL.txt": {
+    "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/main/LICENSE",
+    "sha256": "0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb"
+  }
+}

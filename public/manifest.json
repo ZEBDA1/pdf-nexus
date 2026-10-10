@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "PDF Nexus",
+  "version": "1.6.6",
+  "author": "ZEBDA",
+  "description": "__MSG_extensionDescription__",
+  "default_locale": "fr",
+  "minimum_chrome_version": "131",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "PDF Nexus",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png",
+      "128": "icons/128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "options_ui": {
+    "page": "editor.html#settings",
+    "open_in_tab": true
+  },
+  "permissions": ["storage", "activeTab"],
+  "optional_host_permissions": ["https://*/*", "http://*/*", "file:///*"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'none'; frame-src 'self' blob:; connect-src 'self' https: http: file:; worker-src 'self';"
+  },
+  "optional_permissions": ["webRequest", "downloads"],
+  "web_accessible_resources": [
+    {
+      "resources": ["editor.html"],
+      "matches": ["https://*/*", "http://*/*"]
+    }
+  ]
+}
