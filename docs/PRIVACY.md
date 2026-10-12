@@ -2,6 +2,8 @@
 
 Les PDF, annotations, conversions et OCR restent sur l’appareil. Aucun service de télémétrie, publicité, analyse d’audience ou hébergement documentaire n’est intégré. Les scripts, WASM, modèles OCR, polices et données PDF.js sont embarqués. `npm run assets` télécharge ces ressources publiques pour construire l’extension, sans recevoir de documents.
 
+Depuis la version 1.6.7, les chemins CDN de secours présents dans la distribution générique de Tesseract.js sont supprimés pendant la préparation des ressources. Le code principal impose un Worker de même origine et l’archive de production est refusée par l’audit si un CDN ou un Worker distant est détecté. L’OCR ne charge donc aucun JavaScript ou WebAssembly depuis Internet.
+
 ## Permissions
 
 - `storage` : préférences dans Chrome Storage Local et clé facultative dans Storage Session. IndexedDB conserve récents et échanges si activé. Les deux stockages Chrome sont limités aux contextes de confiance ; aucun content script n’existe.

@@ -4,7 +4,7 @@ PDF Nexus is a free Chrome and Microsoft Edge extension for reading, editing, or
 
 ## Install or update
 
-1. Build the project, or extract `release/pdf-nexus-1.6.6.zip`.
+1. Build the project, or extract `release/pdf-nexus-1.6.7.zip`.
 2. Open `chrome://extensions` or `edge://extensions` and enable Developer mode.
 3. Choose **Load unpacked** and select the `dist` folder (or extracted archive folder) containing `manifest.json`.
 4. Choose your language and light, dark or system theme in the initial setup. You can change them in Settings.

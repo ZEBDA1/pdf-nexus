@@ -5,7 +5,24 @@ import { resolve, join } from 'node:path';
 const root = resolve('public');
 await mkdir(join(root, 'vendor/ocr/core'), { recursive: true });
 await mkdir(join(root, 'fonts'), { recursive: true });
-await cp('node_modules/tesseract.js/dist/worker.min.js', join(root, 'vendor/ocr/worker.min.js'));
+const tesseractWorker = await readFile('node_modules/tesseract.js/dist/worker.min.js', 'utf8');
+const localTesseractWorker = tesseractWorker
+  // Explicit local paths are supplied at runtime. Remove upstream CDN fallbacks
+  // as well, so no executable resource can leave the MV3 extension package.
+  .replaceAll('https://cdn.jsdelivr.net/npm/tesseract.js-core@v', './local-core-v')
+  .replaceAll('https://cdn.jsdelivr.net/npm/@tesseract.js-data/', './local-language-data/')
+  .replace(
+    'r.g.importScripts(l)',
+    'r.g.importScripts(self.location.origin+"/vendor/ocr/core/tesseract-core-simd-lstm.wasm.js")',
+  );
+if (
+  localTesseractWorker === tesseractWorker ||
+  /cdn\.jsdelivr\.net/i.test(localTesseractWorker) ||
+  localTesseractWorker.includes('r.g.importScripts(l)') ||
+  !localTesseractWorker.includes('core/tesseract-core-simd-lstm.wasm.js')
+)
+  throw new Error('Les chemins distants du Worker OCR n’ont pas été neutralisés.');
+await writeFile(join(root, 'vendor/ocr/worker.min.js'), localTesseractWorker);
 for (const name of await readdir('node_modules/tesseract.js-core'))
   if (/\.wasm\.js$/.test(name))
     await cp(`node_modules/tesseract.js-core/${name}`, join(root, 'vendor/ocr/core', name));

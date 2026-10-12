@@ -1,9 +1,38 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'node:path';
+
+function tesseractMv3() {
+  return {
+    name: 'tesseract-mv3-local-worker',
+    enforce: 'pre' as const,
+    transform(_: string, id: string) {
+      const path = id.replace(/\\/g, '/').split('?')[0];
+      if (path.endsWith('/tesseract.js/src/worker/browser/defaultOptions.js'))
+        return {
+          code: `module.exports = {
+            logger: () => {},
+            workerPath: new URL('vendor/ocr/worker.min.js', globalThis.location.href).href,
+          };`,
+          map: null,
+        };
+      if (path.endsWith('/tesseract.js/src/worker/browser/spawnWorker.js'))
+        return {
+          code: `module.exports = ({ workerPath }) => {
+            const url = new URL(workerPath, globalThis.location.href);
+            if (url.origin !== globalThis.location.origin)
+              throw new Error('Le Worker OCR doit provenir du paquet PDF Nexus.');
+            return new Worker(url.href);
+          };`,
+          map: null,
+        };
+    },
+  };
+}
+
 export default defineConfig({
   base: './',
-  plugins: [react()],
+  plugins: [tesseractMv3(), react()],
   optimizeDeps: {
     include: [
       'pdf-lib',

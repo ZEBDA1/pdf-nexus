@@ -7,7 +7,7 @@
 **L'atelier PDF tout-en-un, ultra-rapide et 100% privé pour votre navigateur.**  
 _Éditez, organisez, convertissez, signez et analysez vos PDF directement dans Google Chrome & Microsoft Edge — sans aucun serveur externe._
 
-[![Version](https://img.shields.io/badge/version-1.6.6-emerald.svg?style=for-the-badge&logo=semver&logoColor=white)](docs/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.6.7-emerald.svg?style=for-the-badge&logo=semver&logoColor=white)](docs/CHANGELOG.md)
 [![Manifest V3](https://img.shields.io/badge/Chrome_Extension-Manifest_V3-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](public/manifest.json)
 [![100% Local](https://img.shields.io/badge/Privacy-100%25_Client--Side-10b981?style=for-the-badge&logo=shield&logoColor=white)](docs/PRIVACY.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)

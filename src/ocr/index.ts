@@ -27,7 +27,6 @@ export async function recognize(
       workerPath: assetUrl('vendor/ocr/worker.min.js'),
       corePath: assetUrl('vendor/ocr/core/'),
       langPath: assetUrl('vendor/ocr/'),
-      workerBlobURL: false,
       gzip: false,
       cacheMethod: 'none',
       logger: (m) => {

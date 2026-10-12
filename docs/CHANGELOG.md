@@ -4,6 +4,10 @@ Ce document conserve l'historique complet des versions, correctifs et évolution
 
 ---
 
+## Correctif 1.6.7 — OCR entièrement local pour Manifest V3
+
+Les valeurs CDN de secours incluses par défaut dans Tesseract.js ont été retirées du code livré. Le Worker OCR est créé directement depuis le paquet de l’extension, refuse une origine différente et charge uniquement les moteurs et données linguistiques embarqués. Un audit de production bloque désormais la création de l’archive si une URL CDN ou un Worker distant réapparaît dans un fichier exécutable.
+
 ## Correctif 1.6.6 — permissions minimales pour le Store
 
 La permission facultative `declarativeNetRequestWithHostAccess`, devenue inutile depuis le remplacement des règles DNR, a été retirée du manifeste. L’ouverture automatique des PDF web continue d’utiliser uniquement `webRequest`, après activation explicite par l’utilisateur. Cette version ne change pas le traitement des documents.

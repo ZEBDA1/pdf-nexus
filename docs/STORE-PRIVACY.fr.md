@@ -1,6 +1,6 @@
-# Déclaration Chrome Web Store — PDF Nexus 1.6.6
+# Déclaration Chrome Web Store — PDF Nexus 1.6.7
 
-Ces textes correspondent au manifeste et au comportement de la version 1.6.6.
+Ces textes correspondent au manifeste et au comportement de la version 1.6.7.
 
 ## Objectif unique
 
@@ -12,7 +12,7 @@ Sélectionner **Non, je n’utilise pas de code distant**.
 
 Justification, si un texte est demandé :
 
-> PDF Nexus n’exécute aucun code distant. Tous les scripts, Web Workers, modules WebAssembly, ressources PDF.js, composants OCR Tesseract, polices et bibliothèques sont inclus dans le paquet de l’extension. Les requêtes réseau servent uniquement à charger un PDF explicitement ouvert par l’utilisateur ou, lorsque l’utilisateur active et configure lui-même une API d’IA compatible, à envoyer des extraits textuels à cette API et à recevoir une réponse sous forme de données. Aucun code reçu du réseau n’est évalué ou exécuté.
+> PDF Nexus n’exécute aucun code distant. Tous les scripts, Web Workers, modules WebAssembly, ressources PDF.js, composants OCR Tesseract, polices et bibliothèques sont inclus dans le paquet de l’extension. Les valeurs CDN de secours de Tesseract.js sont supprimées de la version distribuée et le Worker OCR refuse toute origine différente de celle de l’extension. Les requêtes réseau servent uniquement à charger un PDF explicitement ouvert par l’utilisateur ou, lorsque l’utilisateur active et configure lui-même une API d’IA compatible, à envoyer des extraits textuels à cette API et à recevoir une réponse sous forme de données. Aucun code reçu du réseau n’est évalué ou exécuté.
 
 ## Justifications des permissions
 
@@ -34,7 +34,7 @@ Justification, si un texte est demandé :
 
 ### declarativeNetRequestWithHostAccess
 
-Cette permission a été retirée de la version 1.6.6 car elle n’est plus utilisée. Après téléversement de `pdf-nexus-1.6.6.zip`, ce champ doit disparaître. Ne pas fournir une justification pour une permission inutile.
+Cette permission a été retirée depuis la version 1.6.6 car elle n’est plus utilisée. Après téléversement de `pdf-nexus-1.6.7.zip`, ce champ doit rester absent. Ne pas fournir une justification pour une permission inutile.
 
 ## Certification des données
 
