@@ -15,7 +15,7 @@ _Éditez, organisez, convertissez, signez et analysez vos PDF directement dans G
 
 ---
 
-### 🚀 [Installer sur le Chrome Web Store](CHROME_STORE_URL_PLACEHOLDER) _(Lien bientôt disponible)_
+### 🚀 [Installer sur le Chrome Web Store](https://chromewebstore.google.com/detail/dkpcbfafcmhacekpknhklbdkioaoamde)
 
 [Fonctionnalités](#-fonctionnalités-phares) • [Galerie & Captures](#-galerie-de-linterface) • [Installation](#-installation--démarrage-rapide) • [Architecture](#-architecture-technique) • [Confidentialité](#-confidentialité--zéro-télémétrie) • [Auteur](#-auteur--crédits) • [Changelog](docs/CHANGELOG.md) • [English Guide](docs/USER-GUIDE.en.md)
 
@@ -114,7 +114,7 @@ _Éditez, organisez, convertissez, signez et analysez vos PDF directement dans G
 ### Option A : Depuis le Chrome Web Store (Recommandé)
 
 > 🔗 **Lien officiel du Store :**  
-> [![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-Ajouter_à_Chrome-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](CHROME_STORE_URL_PLACEHOLDER)  
+> [![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-Ajouter_à_Chrome-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/dkpcbfafcmhacekpknhklbdkioaoamde)  
 > _(Cliquez sur « Ajouter à Chrome » pour installer et épingler l'extension en un clic.)_
 
 <br />
