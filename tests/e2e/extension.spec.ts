@@ -67,9 +67,27 @@ for (const channel of ['chromium', 'msedge'] as const) {
       await page.getByLabel('Écrire directement sur le PDF').fill('Hors connexion');
       const promise = page.waitForEvent('download');
       await page.getByRole('button', { name: 'Exporter le PDF', exact: true }).click();
+      await page.getByRole('button', { name: 'Télécharger le PDF', exact: true }).click();
       const downloaded = await promise;
-      const pdf = await PDFDocument.load(await readFile((await downloaded.path())!));
+      const exported = await readFile((await downloaded.path())!);
+      const pdf = await PDFDocument.load(exported);
       expect(pdf.getPageCount()).toBe(1);
+      await page.locator('input[type=file]').first().setInputFiles({
+        name: 'reouvert-nexus.pdf',
+        mimeType: 'application/pdf',
+        buffer: exported,
+      });
+      await expect(page.locator('.document-title')).toContainText('reouvert-nexus.pdf');
+      const restored = page.locator('.page-scroller [data-annotation-id]');
+      await expect(restored).toHaveCount(1);
+      await page
+        .getByRole('button', { name: 'Lire et sélectionner le texte', exact: true })
+        .click();
+      await restored.click();
+      await page
+        .getByRole('button', { name: 'Supprimer l’annotation sélectionnée', exact: true })
+        .click();
+      await expect(restored).toHaveCount(0);
       // Replace only the disposable test document, accepting the product's draft warning.
       const canvas = createCanvas(1400, 600);
       const ctx = canvas.getContext('2d');

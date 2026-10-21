@@ -78,15 +78,24 @@ import {
 } from '../utils/files';
 import { loadPdf, extractPage, renderRaster, canvasBytes } from '../pdf/reader';
 import { History } from '../pdf/history';
-import { processJob, getFont, type RasterPage } from '../workers/client';
+import { processJob, restoreSource, getFont, type RasterPage } from '../workers/client';
+import type { RestoredSource } from '../pdf/editable';
 import { recognize } from '../ocr';
 import { packageOutputs } from '../converters';
+import { listDrafts, loadDraft, deleteDraft, type DraftInfo } from '../storage/drafts';
+import { useAutosave } from './useAutosave';
+import { ExportDialog } from './ExportDialog';
+import { DraftStatus } from './DraftStatus';
+import { moveObject } from '../pdf/objects';
 
 type View = 'home' | 'editor' | 'tools' | 'convert' | 'settings';
 export function App() {
   const [setup, setSetup] = useState(false),
     [prefsReady, setPrefsReady] = useState(false);
   const importedUrl = useRef(false);
+  const [drafts, setDrafts] = useState<DraftInfo[]>([]),
+    [draftId, setDraftId] = useState<string>(uid),
+    [recovered, setRecovered] = useState(false);
   const [view, setView] = useState<View>(
     ['settings', 'convert', 'tools'].includes(location.hash.slice(1))
       ? (location.hash.slice(1) as View)
@@ -101,12 +110,19 @@ export function App() {
   const [current, setCurrent] = useState(0),
     [zoom, setZoom] = useState(1),
     [tool, setTool] = useState<Tool>('select'),
-    [color, setColor] = useState('#6456ed'),
+    [color, setColor] = useState('#000000'),
     [size, setSize] = useState(14),
     [text, setText] = useState(''),
     [link, setLink] = useState(''),
     [image, setImage] = useState<{ bytes: Uint8Array; type: 'png' | 'jpg'; aspect?: number }>(),
-    [selected, setSelected] = useState<string>();
+    [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const selected = selectedIds.at(-1);
+  function setSelected(id?: string) {
+    setSelectedIds(id ? [id] : []);
+  }
+  const clipboard = useRef<Annotation[]>([]);
+  const [canPaste, setCanPaste] = useState(false);
+  const creationColors = useRef<Partial<Record<Tool, string>>>({ text: '#000000' });
   const [ai, setAi] = useState(false),
     [modal, setModal] = useState<'tools' | 'metadata' | null>(null),
     [range, setRange] = useState(''),
@@ -123,6 +139,21 @@ export function App() {
     toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const docsRef = useRef<PDFDocumentProxy[]>([]);
   docsRef.current = docs;
+  const autosave = useAutosave({
+    id: draftId,
+    workspace,
+    history: history.current,
+    current,
+    zoom,
+    documentId: docId,
+    enabled: prefs.autoSave && prefsReady,
+    recovered,
+    saved: () => {
+      void listDrafts()
+        .then(setDrafts)
+        .catch(() => {});
+    },
+  });
   function notify(message: string, error = false) {
     setToast({ text: t(message), error });
     clearTimeout(toastTimer.current);
@@ -139,6 +170,9 @@ export function App() {
     void listRecent()
       .then(setRecent)
       .catch(() => notify('Le stockage local est indisponible.', true));
+    void listDrafts()
+      .then(setDrafts)
+      .catch(() => notify('Impossible de lire les brouillons locaux.', true));
     return () => {
       docsRef.current.forEach((d) => void d.loadingTask.destroy());
     };
@@ -157,20 +191,18 @@ export function App() {
     if (location.hash === '#ai') setAi(true);
   }, []);
   useEffect(() => {
-    const h = () => {
-      if (workspace?.pages.some((p) => p.annotations.length) || workspace?.watermark) {
-        return 'Exportez votre document avant de quitter.';
-      }
-    };
     const before = (e: BeforeUnloadEvent) => {
-      if (h() || history.current.past.length) {
+      if (
+        (history.current.past.length || history.current.future.length) &&
+        autosave.status.kind !== 'saved'
+      ) {
         e.preventDefault();
         e.returnValue = '';
       }
     };
     window.addEventListener('beforeunload', before);
     return () => window.removeEventListener('beforeunload', before);
-  }, [workspace]);
+  }, [workspace, autosave.status.kind]);
   async function updatePrefs(p: Preferences) {
     setPrefs(p);
     try {
@@ -233,13 +265,16 @@ export function App() {
     if (sources.reduce((n, s) => n + s.bytes.length, 0) > 150 * 1024 * 1024)
       throw new Error('Les PDF ouverts ne peuvent pas dépasser 150 Mio au total.');
     const loaded: PDFDocumentProxy[] = [];
+    const prepared: RestoredSource[] = [];
     let encrypted = false;
     try {
       for (const source of sources) {
         checkAbort(signal);
+        const restored = await restoreSource(source, signal);
+        prepared.push(restored);
         let doc: PDFDocumentProxy;
         try {
-          doc = await loadPdf(source.bytes, undefined, signal);
+          doc = await loadPdf(restored.source.bytes, undefined, signal);
         } catch (e) {
           if ((e as Error).name !== 'PasswordException') throw e;
           const password = window.prompt(
@@ -262,18 +297,25 @@ export function App() {
       setSelected(undefined);
       setCurrent(0);
       setTool('select');
+      setDraftId(uid());
+      setRecovered(false);
+      const formGroups = loaded.map(() => uid());
       const pages = loaded.flatMap((d, source) =>
         Array.from({ length: d.numPages }, (_, index) => ({
           id: uid(),
           source,
           index,
           rotation: 0,
-          annotations: [],
+          formGroup: formGroups[source],
+          annotations: (prepared[source].annotations[index] ?? []).map((a) => ({
+            ...a,
+            id: uid(),
+          })),
         })),
       );
       setWorkspace({
         name: sources.length === 1 ? sources[0].name : 'fusion.pdf',
-        sources,
+        sources: prepared.map((p) => p.source),
         pages,
         watermark: '',
         numbering: false,
@@ -281,6 +323,11 @@ export function App() {
         encrypted,
       });
       setView('editor');
+      if (prepared.some((p) => p.invalidPages))
+        notify(
+          'Certaines données d’édition Nexus sont illisibles. Leur rendu reste visible, mais ces éléments ne peuvent pas être sélectionnés.',
+          true,
+        );
       const id = await documentId(sources[0].bytes);
       setDocId(id);
       if (prefs.remember && sources.length === 1) {
@@ -297,7 +344,68 @@ export function App() {
     }
   }
   function unsaved() {
-    return history.current.past.length > 0;
+    return history.current.past.length > 0 && autosave.status.kind !== 'saved';
+  }
+  async function resumeDraft(id: string) {
+    if (unsaved() && !window.confirm(t('Remplacer le brouillon actuel ?'))) return;
+    await run('Restauration du brouillon', async (signal) => {
+      const stored = await loadDraft(id),
+        loaded: PDFDocumentProxy[] = [];
+      try {
+        for (const source of stored.sources) {
+          const doc = await loadPdf(source.bytes, undefined, signal);
+          loaded.push(doc);
+          if ((await doc.getPermissions()) !== null)
+            throw new Error('Les documents protégés ne sont pas sauvegardés en brouillon.');
+        }
+        checkAbort(signal);
+        docsRef.current.forEach((d) => void d.loadingTask.destroy());
+        const recoveredHistory = new History();
+        recoveredHistory.past = stored.state.history.past;
+        recoveredHistory.future = stored.state.history.future;
+        history.current = recoveredHistory;
+        liveHistory.current = '';
+        cache.current.clear();
+        setSelected(undefined);
+        setWorkspace({
+          ...stored.state.snapshot,
+          name: stored.info.name,
+          sources: stored.sources,
+          encrypted: false,
+        });
+        setDocs(loaded);
+        setDraftId(id);
+        setRecovered(true);
+        setDocId(stored.state.documentId);
+        setCurrent(
+          Math.max(0, Math.min(stored.state.current, stored.state.snapshot.pages.length - 1)),
+        );
+        setZoom(Math.max(0.25, Math.min(3, stored.state.zoom)));
+        setView('editor');
+        notify('Brouillon restauré avec son historique local.');
+      } catch (error) {
+        await Promise.all(loaded.map((d) => d.loadingTask.destroy()));
+        throw error;
+      }
+    });
+  }
+  async function removeDraft(id: string) {
+    if (!window.confirm(t('Supprimer définitivement ce brouillon local ?'))) return;
+    if (id === draftId) {
+      autosave.cancel();
+      setWorkspace(undefined);
+      setDocs([]);
+      docsRef.current.forEach((d) => void d.loadingTask.destroy());
+      history.current = new History();
+      setView('home');
+    }
+    try {
+      await deleteDraft(id);
+      setDrafts(await listDrafts());
+      notify('Brouillon supprimé.');
+    } catch (error) {
+      notify(errorMessage(error), true);
+    }
   }
   function open() {
     if (
@@ -323,21 +431,26 @@ export function App() {
     if (!workspace || workspace.encrypted) return;
     await run('Insertion des pages', async (signal) => {
       const sources: Source[] = [],
-        newDocs: PDFDocumentProxy[] = [];
+        newDocs: PDFDocumentProxy[] = [],
+        prepared: RestoredSource[] = [];
       try {
         for (const file of files) {
           checkAbort(signal);
           const source = await readFile(file);
-          sources.push(source);
-          newDocs.push(await loadPdf(source.bytes));
+          const restored = await restoreSource(source, signal);
+          prepared.push(restored);
+          sources.push(restored.source);
+          newDocs.push(await loadPdf(restored.source.bytes));
         }
+        const formGroups = newDocs.map(() => uid());
         const refs = newDocs.flatMap((d, s) =>
           Array.from({ length: d.numPages }, (_, index) => ({
             id: uid(),
             source: workspace.sources.length + s,
             index,
             rotation: 0,
-            annotations: [],
+            formGroup: formGroups[s],
+            annotations: (prepared[s].annotations[index] ?? []).map((a) => ({ ...a, id: uid() })),
           })),
         );
         if (workspace.pages.length + refs.length > 1000) throw new Error('Limite de 1 000 pages.');
@@ -382,7 +495,23 @@ export function App() {
       (pages) =>
         pages.map((p) =>
           p.id === pageId
-            ? { ...p, annotations: p.annotations.map((old) => (old.id === a.id ? a : old)) }
+            ? {
+                ...p,
+                annotations: p.annotations.map((old) =>
+                  old.id === a.id && !old.locked
+                    ? a
+                    : selectedIds.includes(a.id) &&
+                        selectedIds.includes(old.id) &&
+                        !old.locked &&
+                        !old.hidden
+                      ? moveObject(
+                          old,
+                          a.x - (p.annotations.find((v) => v.id === a.id)?.x ?? a.x),
+                          a.y - (p.annotations.find((v) => v.id === a.id)?.y ?? a.y),
+                        )
+                      : old,
+                ),
+              }
             : p,
         ),
       group,
@@ -390,11 +519,14 @@ export function App() {
   }
   function changeColor(value: string) {
     setColor(value);
+    if (tool !== 'select' && !selected) creationColors.current[tool] = value;
     if (selected)
       alterPages((pages) =>
         pages.map((p) => ({
           ...p,
-          annotations: p.annotations.map((a) => (a.id === selected ? { ...a, color: value } : a)),
+          annotations: p.annotations.map((a) =>
+            selectedIds.includes(a.id) && !a.locked ? { ...a, color: value } : a,
+          ),
         })),
       );
   }
@@ -404,16 +536,26 @@ export function App() {
       alterPages((pages) =>
         pages.map((p) => ({
           ...p,
-          annotations: p.annotations.map((a) => (a.id === selected ? { ...a, size: value } : a)),
+          annotations: p.annotations.map((a) =>
+            selectedIds.includes(a.id) && !a.locked ? { ...a, size: value } : a,
+          ),
         })),
       );
   }
   function chooseTool(value: Tool) {
     setSelected(undefined);
+    if (value !== 'select')
+      setColor(creationColors.current[value] ?? (value === 'text' ? '#000000' : '#6456ed'));
     setTool(value);
   }
-  function selectAnnotation(id: string) {
-    setSelected(id);
+  function selectAnnotation(id: string, multiple = false) {
+    if (!id) {
+      setSelected(undefined);
+      return;
+    }
+    setSelectedIds((ids) =>
+      multiple ? (ids.includes(id) ? ids.filter((v) => v !== id) : [...ids, id]) : [id],
+    );
     setTool('select');
     const pageIndex =
       workspace?.pages.findIndex((p) => p.annotations.some((a) => a.id === id)) ?? -1;
@@ -424,10 +566,71 @@ export function App() {
     setCurrent(pageIndex);
   }
   function removeAnnotation() {
+    const removable =
+      workspace?.pages.flatMap((p) =>
+        p.annotations.filter((a) => selectedIds.includes(a.id) && !a.locked).map((a) => a.id),
+      ) ?? [];
+    if (!removable.length) return;
     alterPages((pages) =>
-      pages.map((p) => ({ ...p, annotations: p.annotations.filter((a) => a.id !== selected) })),
+      pages.map((p) => ({
+        ...p,
+        annotations: p.annotations.filter((a) => !removable.includes(a.id)),
+      })),
     );
-    setSelected(undefined);
+    setSelectedIds(selectedIds.filter((id) => !removable.includes(id)));
+  }
+  function patchObjects(ids: string[], changes: Partial<Annotation>, group = '') {
+    alterPages(
+      (pages) =>
+        pages.map((p) => ({
+          ...p,
+          annotations: p.annotations.map((a) =>
+            ids.includes(a.id) &&
+            (!a.locked || Object.keys(changes).every((k) => k === 'locked' || k === 'name'))
+              ? { ...a, ...changes, id: a.id }
+              : a,
+          ),
+        })),
+      group,
+    );
+  }
+  function orderObject(id: string, direction: number) {
+    alterPages((pages) =>
+      pages.map((p) => {
+        const annotations = [...p.annotations],
+          from = annotations.findIndex((a) => a.id === id);
+        const to = from + direction;
+        if (from < 0 || to < 0 || to >= annotations.length || annotations[from].locked) return p;
+        [annotations[from], annotations[to]] = [annotations[to], annotations[from]];
+        return { ...p, annotations };
+      }),
+    );
+  }
+  function copyObjects() {
+    const items =
+      workspace?.pages.flatMap((p) => p.annotations.filter((a) => selectedIds.includes(a.id))) ??
+      [];
+    if (!items.length) return;
+    clipboard.current = structuredClone(items);
+    setCanPaste(true);
+    notify('Objets copiés. Choisissez une page puis collez.');
+  }
+  function pasteObjects() {
+    if (!workspace || workspace.encrypted || !clipboard.current.length) return;
+    const items = clipboard.current.map((a) => ({
+      ...moveObject(structuredClone(a), 12, -12),
+      id: uid(),
+      locked: false,
+      hidden: false,
+    }));
+    const target = workspace.pages[current];
+    alterPages((pages) =>
+      pages.map((p) =>
+        p.id === target.id ? { ...p, annotations: [...p.annotations, ...items] } : p,
+      ),
+    );
+    setSelectedIds(items.map((a) => a.id));
+    setTool('select');
   }
   function undo() {
     liveHistory.current = '';
@@ -455,6 +658,7 @@ export function App() {
   function duplicate() {
     alterPages((p) => {
       const copy = { ...structuredClone(p[current]), id: uid() };
+      copy.formGroup = uid();
       copy.annotations = copy.annotations.map((a) => ({ ...a, id: uid() }));
       const list = [...p];
       list.splice(current + 1, 0, copy);
@@ -522,20 +726,20 @@ export function App() {
   }
   async function currentSource(signal?: AbortSignal): Promise<Source> {
     if (!workspace) throw new Error('Ouvrez un PDF.');
-    const [file] = await processJob({ kind: 'export', workspace, font: await getFont() }, signal);
+    const [file] = await processJob(
+      {
+        kind: 'export',
+        workspace,
+        font: await getFont(),
+        options: { mode: 'flattened', preserveForms: false },
+      },
+      signal,
+    );
     return { name: workspace.name, bytes: file.bytes };
   }
+  const [exportSnapshot, setExportSnapshot] = useState<Workspace>();
   function exportPdf() {
-    void run('Export du PDF', async (signal, progress) => {
-      if (!workspace) return;
-      const [f] = await processJob(
-        { kind: 'export', workspace, font: await getFont() },
-        signal,
-        progress,
-      );
-      download(f.bytes, f.name, f.mime);
-      notify('PDF exporté. Les annotations sont aplaties dans le nouveau fichier.');
-    });
+    if (workspace && !workspace.encrypted) setExportSnapshot(workspace);
   }
   function exportAnswer(value: string) {
     void run('Export du texte en PDF', async (signal) => {
@@ -549,7 +753,7 @@ export function App() {
   function insertAnswer(value: string) {
     if (!workspace) return;
     setText(value);
-    setTool('text');
+    chooseTool('text');
     notify(
       'Texte prêt. Cliquez sur une page pour le placer ; les longues réponses sont à répartir en plusieurs zones.',
     );
@@ -834,12 +1038,17 @@ export function App() {
     if (
       !window.confirm(
         t(
-          'Effacer les fichiers récents, les conversations locales, la clé API et fermer le brouillon actuel ? Les fichiers téléchargés sont conservés.',
+          'Effacer les récents, tous les brouillons enregistrés, les conversations et la clé API, puis fermer le document actuel ? Les fichiers téléchargés sont conservés.',
         ),
       )
     )
       return;
     void run('Effacement des données locales', async () => {
+      autosave.cancel();
+      setWorkspace(undefined);
+      setDrafts([]);
+      clipboard.current = [];
+      setCanPaste(false);
       await clearData();
       setRecent([]);
       setWorkspace(undefined);
@@ -854,6 +1063,7 @@ export function App() {
   }
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      if ((e.target as Element)?.closest('[aria-modal="true"]')) return;
       const editable = (e.target as HTMLElement)?.closest(
         'input,textarea,select,[contenteditable]',
       );
@@ -864,6 +1074,17 @@ export function App() {
         } else if (e.key.toLowerCase() === 'o') {
           e.preventDefault();
           open();
+        } else if (
+          e.key.toLowerCase() === 'c' &&
+          !editable &&
+          !window.getSelection()?.toString() &&
+          selectedIds.length
+        ) {
+          e.preventDefault();
+          copyObjects();
+        } else if (e.key.toLowerCase() === 'v' && !editable && clipboard.current.length) {
+          e.preventDefault();
+          pasteObjects();
         } else if (e.key.toLowerCase() === 'z' && !editable) {
           e.preventDefault();
           e.shiftKey ? redo() : undo();
@@ -876,13 +1097,13 @@ export function App() {
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [workspace, selected, prefs]);
+  }, [workspace, selectedIds, prefs, current]);
   const locked = workspace?.encrypted ?? false;
   const toolsContent = (
     <div className="document-tools">
       <p className="notice">
         {t(
-          'Les traitements produisent de nouveaux fichiers. Exporter conserve vos modifications ; les annotations originales interactives et les signatures numériques ne sont pas conservées.',
+          'Les traitements créent de nouveaux fichiers. L’export propose une copie Nexus ou une copie de partage. Les scripts et signatures numériques d’origine ne sont pas conservés.',
         )}
       </p>
       <label className="field">
@@ -993,6 +1214,13 @@ export function App() {
   );
   return (
     <div className={`app-shell ${view === 'editor' ? 'editor-shell' : ''}`}>
+      {exportSnapshot && (
+        <ExportDialog
+          workspace={exportSnapshot}
+          close={() => setExportSnapshot(undefined)}
+          done={() => notify('PDF exporté.')}
+        />
+      )}
       {openingError && !workspace && (
         <div className="opening-error" role="alert">
           <strong>{t('Le PDF attend votre intervention')}</strong>
@@ -1156,6 +1384,9 @@ export function App() {
         )}
         {view === 'home' && (
           <Home
+            drafts={drafts}
+            resumeDraft={(id) => void resumeDraft(id)}
+            removeDraft={(id) => void removeDraft(id)}
             open={open}
             drop={(files) => void drop(files)}
             recent={recent}
@@ -1246,6 +1477,48 @@ export function App() {
           (workspace ? (
             <div className="editor-layout">
               <Reader
+                replaceNative={(changes) =>
+                  commit({
+                    ...workspace,
+                    pages: workspace.pages.map((p) => {
+                      const edits = changes.filter((c) => c.pageId === p.id).map((c) => c.edit);
+                      return edits.length
+                        ? {
+                            ...p,
+                            nativeEdits: [
+                              ...(p.nativeEdits ?? []).filter(
+                                (e) => !edits.some((next) => next.id === e.id),
+                              ),
+                              ...edits,
+                            ],
+                          }
+                        : p;
+                    }),
+                  })
+                }
+                selectedIds={selectedIds}
+                patchObjects={patchObjects}
+                orderObject={orderObject}
+                copyObjects={copyObjects}
+                pasteObjects={pasteObjects}
+                canPaste={canPaste}
+                updateForm={(pageId, name, value, group) => {
+                  const original = workspace.pages.find((p) => p.id === pageId)!;
+                  commit(
+                    {
+                      ...workspace,
+                      pages: workspace.pages.map((p) =>
+                        (p.formGroup && p.formGroup === original.formGroup) ||
+                        (!p.formGroup && p.source === original.source)
+                          ? { ...p, formValues: { ...p.formValues, [name]: value } }
+                          : p,
+                      ),
+                    },
+                    undefined,
+                    group,
+                  );
+                }}
+                saveStatus={<DraftStatus status={autosave.status} retry={autosave.retry} />}
                 workspace={workspace}
                 updateNative={(pageId, edits, group) =>
                   commit(
@@ -1267,7 +1540,18 @@ export function App() {
                         p.id === pageId
                           ? {
                               ...p,
-                              annotations: [...p.annotations.filter((old) => old.id !== a.id), a],
+                              annotations: p.annotations.some((old) => old.id === a.id)
+                                ? p.annotations.map((old) =>
+                                    old.id === a.id && !old.locked
+                                      ? {
+                                          ...a,
+                                          name: old.name,
+                                          hidden: old.hidden,
+                                          locked: old.locked,
+                                        }
+                                      : old,
+                                  )
+                                : [...p.annotations, a],
                             }
                           : p,
                       ),

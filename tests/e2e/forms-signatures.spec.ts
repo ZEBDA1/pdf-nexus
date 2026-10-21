@@ -56,6 +56,7 @@ test('Texte déplacé, cases interactives et signature réellement exportés', a
   await expect(page.locator('.page-scroller .annotation-layer image')).toHaveCount(1);
   const pending = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Exporter le PDF', exact: true }).click();
+  await page.getByRole('button', { name: 'Télécharger le PDF', exact: true }).click();
   const bytes = await readFile((await (await pending).path())!);
   const result = await page.evaluate(async (bytes) => {
     const { loadPdf } = await import('/' + 'src/pdf/reader.ts');

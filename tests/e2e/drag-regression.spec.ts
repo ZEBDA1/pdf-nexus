@@ -59,6 +59,7 @@ test('Une signature suit tout le geste, même hors de la page, puis se déplace 
   }));
   const pending = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Exporter le PDF', exact: true }).click();
+  await page.getByRole('button', { name: 'Télécharger le PDF', exact: true }).click();
   const exported = await readFile((await (await pending).path())!);
   const ink = await page.evaluate(
     async ({ bytes, bounds }) => {
@@ -188,6 +189,7 @@ test('Texte ajouté : glisser sur page tournée à 150 %, puis export aux bonnes
   await expect.poll(async () => Number(await hitbox.getAttribute('y'))).toBeCloseTo(y + 40, 1);
   const pending = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Exporter le PDF', exact: true }).click();
+  await page.getByRole('button', { name: 'Télécharger le PDF', exact: true }).click();
   const exported = await readFile((await (await pending).path())!);
   const result = await page.evaluate(async (bytes) => {
     const { loadPdf } = await import('/' + 'src/pdf/reader.ts');

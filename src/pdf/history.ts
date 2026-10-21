@@ -1,6 +1,14 @@
 import type { Snapshot } from '../types';
 export function cloneSnapshot(value: Snapshot): Snapshot {
-  return structuredClone(value);
+  // A Workspace is structurally a Snapshot, but its source buffers must never
+  // be copied into every history entry (or into persisted undo history).
+  return structuredClone({
+    pages: value.pages,
+    watermark: value.watermark,
+    watermarkOptions: value.watermarkOptions,
+    numbering: value.numbering,
+    cleanMetadata: value.cleanMetadata,
+  });
 }
 export class History {
   past: Snapshot[] = [];

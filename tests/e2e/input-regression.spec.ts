@@ -46,6 +46,7 @@ test('Saisie de taille naturelle, barre contextuelle et ajout exporté sans vali
   const pending = page.waitForEvent('download');
   // Export directly from the focused field: no validation or blur is required.
   await page.getByLabel('Écrire directement sur le PDF').press('Control+s');
+  await page.getByRole('button', { name: 'Télécharger le PDF', exact: true }).click();
   const bytes = await readFile((await (await pending).path())!);
   const result = await page.evaluate(async (data) => {
     const { loadPdf, extractAll } = await import('/' + 'src/pdf/reader.ts');

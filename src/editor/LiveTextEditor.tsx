@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Move } from 'lucide-react';
 import { t } from '../i18n';
+import { correctionBox } from '../pdf/objects';
 import type { Annotation, NativeEdit, PageRef } from '../types';
 import type { NativeRun } from '../pdf/native-text';
 import type { PageViewport } from 'pdfjs-dist';
@@ -59,7 +60,7 @@ export function LiveTextEditor({
   // toolbar floats in screen space: readable at any zoom, never tilted by the
   // page or text angle.
   const frame = useRef<HTMLDivElement>(null),
-    input = useRef<HTMLInputElement>(null),
+    input = useRef<HTMLTextAreaElement>(null),
     tools = useRef<HTMLDivElement>(null);
   const group = useRef(crypto.randomUUID());
   const currentEdit = page.nativeEdits?.find((e) => e.id === target.run?.id);
@@ -86,7 +87,11 @@ export function LiveTextEditor({
           4,
           Math.min(
             requested,
-            (requested * target.width) / Math.max(1, context.measureText(text).width),
+            (requested * target.width) /
+              Math.max(
+                1,
+                Math.max(...text.split('\n').map((line) => context.measureText(line).width)),
+              ),
           ),
         )
       : requested;
@@ -162,7 +167,7 @@ export function LiveTextEditor({
     setFont(edit?.font ?? annotation?.replacement?.font ?? '');
     setColor(annotation?.color ?? target.color);
     setBackground(annotation?.replacement?.background ?? target.background);
-    const baseline = target.annotation?.replacement?.baseline ?? target.size * 0.22;
+    const baseline = annotation?.replacement?.baseline ?? target.size * 0.22;
     const radians = (target.angle * Math.PI) / 180;
     setOffset(
       edit?.offset ??
@@ -206,20 +211,32 @@ export function LiveTextEditor({
         group.current,
       );
     } else {
-      const baseline = target.annotation?.replacement?.baseline ?? target.size * 0.22;
+      const { x, y, height, baseline } = correctionBox(
+        target,
+        target.annotation,
+        text,
+        actualSize,
+        position,
+      );
       const a: Annotation = {
         id: target.annotation?.id ?? target.key,
         type: 'text',
         text,
         size: actualSize,
         color: ink,
-        x: target.x + Math.sin((target.angle * Math.PI) / 180) * baseline + position.x,
-        y: target.y - Math.cos((target.angle * Math.PI) / 180) * baseline + position.y,
+        x,
+        y,
         width: Math.max(
           target.width,
-          (measuring.current.getContext('2d')!.measureText(text).width * actualSize) / requested,
+          (Math.max(
+            ...text
+              .split('\n')
+              .map((line) => measuring.current.getContext('2d')!.measureText(line).width),
+          ) *
+            actualSize) /
+            requested,
         ),
-        height: Math.max(target.height, actualSize * 1.22),
+        height,
         replacement: {
           background: bg,
           font: resolved,
@@ -423,6 +440,13 @@ export function LiveTextEditor({
           </small>
         </>
       )}
+      {native && (
+        <small>
+          {t(
+            'Bloc natif sur une ligne. Ajoutez une zone de texte pour un paragraphe sur plusieurs lignes.',
+          )}
+        </small>
+      )}
       {native && (missing || font) && (
         <small>
           {t('Police adaptée :')}
@@ -432,7 +456,11 @@ export function LiveTextEditor({
       )}
       {!panel && (
         <div className="live-tools-actions">
-          <span>{t('Entrée pour terminer · Ctrl+Z pour annuler')}</span>
+          <span>
+            {native
+              ? t('Entrée pour terminer · Ctrl+Z pour annuler')
+              : t('Entrée : nouvelle ligne · Ctrl+Entrée : terminer')}
+          </span>
           <button type="button" className="button primary" onClick={close}>
             {t('Terminer')}
           </button>
@@ -443,14 +471,17 @@ export function LiveTextEditor({
   if (panel)
     return (
       <div className="text-list-item">
-        <input
+        <textarea
+          rows={1}
           ref={input}
           className="live-text-input"
           aria-label={t('Modifier ce texte sur la page')}
           value={value}
           maxLength={3000}
           onChange={(e) => {
-            const text = e.target.value.replace(/[\r\n]/g, ' ');
+            const text = native
+              ? e.target.value.replace(/[\r\n]/g, ' ')
+              : e.target.value.replace(/\r/g, '');
             setValue(text);
             write(text);
           }}
@@ -467,7 +498,10 @@ export function LiveTextEditor({
         onKeyDown={(e) => {
           if (
             !e.nativeEvent.isComposing &&
-            (e.key === 'Escape' || (e.key === 'Enter' && e.target === input.current))
+            (e.key === 'Escape' ||
+              (e.key === 'Enter' &&
+                e.target === input.current &&
+                (native || e.ctrlKey || e.metaKey)))
           ) {
             e.preventDefault();
             e.stopPropagation();
@@ -513,7 +547,8 @@ export function LiveTextEditor({
         >
           <Move size={15} />
         </button>
-        <input
+        <textarea
+          rows={1}
           ref={input}
           className="live-text-input"
           aria-label={t('Modifier ce texte sur la page')}
@@ -522,12 +557,21 @@ export function LiveTextEditor({
           style={{
             ...style,
             fontSize: displaySize,
-            height: Math.max(target.height, target.size * 1.3),
+            height: Math.max(
+              target.height,
+              target.size * 1.3,
+              displaySize * 1.3 * value.split('\n').length,
+            ),
+            lineHeight: '1.3',
+            resize: 'none',
+            overflow: 'hidden',
             color,
             background,
           }}
           onChange={(e) => {
-            const text = e.target.value.replace(/[\r\n]/g, ' ');
+            const text = native
+              ? e.target.value.replace(/[\r\n]/g, ' ')
+              : e.target.value.replace(/\r/g, '');
             setValue(text);
             write(text);
           }}

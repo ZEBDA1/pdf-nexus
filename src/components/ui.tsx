@@ -41,10 +41,12 @@ export function Modal({
   title,
   children,
   close,
+  wide = false,
 }: {
   title: string;
   children: ReactNode;
   close: () => void;
+  wide?: boolean;
 }) {
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -56,7 +58,7 @@ export function Modal({
     <div className="modal-backdrop" onClick={close}>
       <section
         ref={ref}
-        className="modal"
+        className={`modal ${wide ? 'modal-wide' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}

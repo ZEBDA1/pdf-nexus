@@ -41,7 +41,8 @@ const winAnsiCharacters = new Set(
   ),
 );
 export function replacementFontForText(preferred: string, text: string) {
-  return preferred === 'Noto Sans' || Array.from(text).some((c) => !winAnsiCharacters.has(c))
+  return preferred === 'Noto Sans' ||
+    Array.from(text).some((c) => c !== '\n' && c !== '\r' && !winAnsiCharacters.has(c))
     ? 'Noto Sans'
     : preferred;
 }

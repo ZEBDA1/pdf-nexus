@@ -20,6 +20,10 @@ export interface Point {
 }
 export interface Annotation {
   id: string;
+  name?: string;
+  locked?: boolean;
+  hidden?: boolean;
+  font?: string;
   type: Exclude<Tool, 'select'>;
   x: number;
   y: number;
@@ -43,12 +47,19 @@ export interface Annotation {
   };
 }
 export interface PageRef {
+  formGroup?: string;
+  formValues?: Record<string, FormValue>;
   id: string;
   source: number;
   index: number;
   rotation: number;
   annotations: Annotation[];
   nativeEdits?: NativeEdit[];
+}
+export type FormValue = string | string[] | boolean;
+export interface ExportOptions {
+  mode: 'editable' | 'flattened';
+  preserveForms: boolean;
 }
 export interface NativeEdit {
   id: string;
@@ -99,6 +110,7 @@ export interface PageText {
   ocr?: boolean;
 }
 export interface Preferences {
+  autoSave: boolean;
   theme: 'light' | 'dark' | 'auto';
   language: 'fr' | 'en';
   setupCompleted?: boolean;
@@ -110,6 +122,7 @@ export interface Preferences {
   model: string;
 }
 export const defaultPreferences: Preferences = {
+  autoSave: true,
   theme: 'light',
   language: 'fr',
   remember: true,

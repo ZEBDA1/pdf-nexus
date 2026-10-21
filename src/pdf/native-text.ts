@@ -192,14 +192,24 @@ function inspect(page: PDFPage) {
   });
   const fonts = page.node.Resources()?.lookupMaybe(PDFName.of('Font'), PDFDict);
   const runs: InternalRun[] = [];
-  let linear = [1, 0, 0, 1];
+  let linear = [1, 0, 0, 1],
+    renderingMode = 0;
+  const renderModes: number[] = [];
   const matrices: number[][] = [];
   streams.forEach((s, stream) => {
     const t = tokens(s);
-    let block = -1;
+    let block = -1,
+      blockRendering = 0;
     for (let i = 0; i < t.length; i++) {
-      if (t[i].value === 'q') matrices.push([...linear]);
-      if (t[i].value === 'Q') linear = matrices.pop() ?? [1, 0, 0, 1];
+      if (t[i].value === 'q') {
+        matrices.push([...linear]);
+        renderModes.push(renderingMode);
+      }
+      if (t[i].value === 'Q') {
+        linear = matrices.pop() ?? [1, 0, 0, 1];
+        renderingMode = renderModes.pop() ?? 0;
+      }
+      if (t[i].value === 'Tr') renderingMode = Number(t[i - 1]?.value);
       if (t[i].value === 'cm' && i >= 6) {
         const m = t.slice(i - 6, i - 2).map((v) => Number(v.value));
         const [a, b, c, d] = linear;
@@ -210,7 +220,10 @@ function inspect(page: PDFPage) {
           b * m[2] + d * m[3],
         ];
       }
-      if (t[i].value === 'BT') block = i;
+      if (t[i].value === 'BT') {
+        block = i;
+        blockRendering = renderingMode;
+      }
       if (t[i].value !== 'ET' || block < 0) continue;
       const chunk = t.slice(block + 1, i);
       const shows = chunk.filter((x) => ['Tj', 'TJ', "'", '"'].includes(x.value));
@@ -234,7 +247,7 @@ function inspect(page: PDFPage) {
           !independent ||
           !['Tj', 'TJ'].includes(show.value) ||
           tf < 2 ||
-          (tr >= 0 && Number(before[tr - 1]?.value) !== 0)
+          (tr >= 0 ? Number(before[tr - 1]?.value) : blockRendering) !== 0
         )
           continue;
         const operand = chunk[at - 1],

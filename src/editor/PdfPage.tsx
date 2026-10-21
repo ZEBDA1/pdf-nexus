@@ -1,9 +1,12 @@
+import { SearchHighlights } from './SearchHighlights';
+import { moveObject, resizeObject, snapObject } from '../pdf/objects';
 import { LiveTextEditor, type LiveTarget } from './LiveTextEditor';
-import { cssFont, sampleTextColors } from '../pdf/text-style';
-import { CheckboxLayer } from './CheckboxLayer';
-import { detectPrintedBoxes, type Box } from '../pdf/checkboxes';
+import { cssFont, sampleTextColors, replacementFontForText } from '../pdf/text-style';
+import { FormLayer } from './FormLayer';
+import type { Box } from '../pdf/checkboxes';
+import { mapBox, sameBox, boxKey } from '../pdf/geometry';
 import { t } from '../i18n';
-import { getFont } from '../workers/client';
+import { getFont, findPrintedBoxes } from '../workers/client';
 import { nativePreview, listNativeRuns, type NativeRun } from '../pdf/native-text';
 import { loadPdf } from '../pdf/reader';
 import { watermarkFor, watermarkPositions } from '../pdf/watermark';
@@ -14,7 +17,17 @@ import {
   type PageViewport,
   type RenderTask,
 } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import type { Annotation, PageRef, Point, Tool, Source, Watermark, NativeEdit } from '../types';
+import type {
+  Annotation,
+  PageRef,
+  Point,
+  Tool,
+  Source,
+  Watermark,
+  NativeEdit,
+  FormValue,
+  TextItem,
+} from '../types';
 import { uid } from '../utils/files';
 import { previewLines } from '../pdf/annotation-text';
 import '../pdf/text-layer.css';
@@ -88,7 +101,11 @@ function AnnotationShape({ a }: { a: Annotation }) {
             fill={a.color}
             style={cssFont(r.font)}
           >
-            {a.text}
+            {(a.text ?? '').split('\n').map((line, i) => (
+              <tspan x={0} dy={i ? a.size * 1.3 : 0} key={i}>
+                {line}
+              </tspan>
+            ))}
           </text>
         </g>
       </g>
@@ -107,9 +124,9 @@ function AnnotationShape({ a }: { a: Annotation }) {
           transform="scale(1 -1)"
           fill={a.color}
           fontSize={a.size}
-          fontFamily="Noto Sans, sans-serif"
+          style={cssFont(replacementFontForText(a.font ?? 'Noto Sans', a.text ?? ''))}
         >
-          {previewLines(a.text ?? '', a.size, Math.max(10, w - 8))
+          {previewLines(a.text ?? '', a.size, Math.max(10, w - 8), a.font)
             .slice(0, Math.max(1, Math.floor((h - 4) / (a.size * 1.3))))
             .map((line, i) => (
               <tspan x={x + 4} dy={i ? a.size * 1.3 : 0} key={i}>
@@ -185,6 +202,10 @@ function AnnotationShape({ a }: { a: Annotation }) {
   );
 }
 export function PdfPage({
+  searchQuery = '',
+  activeOccurrence = -1,
+  searchItems,
+  onFormChange,
   doc,
   source,
   nativeMode = false,
@@ -198,12 +219,13 @@ export function PdfPage({
   zoom = 1,
   thumbnail = false,
   tool = 'select',
-  color = '#6456ed',
+  color = '#000000',
   size = 14,
   text = '',
   link = '',
   image,
   selected,
+  selectedIds = [],
   onAdd,
   onUpdate,
   onSelect,
@@ -212,6 +234,10 @@ export function PdfPage({
   numbering = false,
   total = 0,
 }: {
+  searchQuery?: string;
+  activeOccurrence?: number;
+  searchItems?: TextItem[];
+  onFormChange?: (name: string, value: FormValue, group: string) => void;
   doc: PDFDocumentProxy;
   source?: Source;
   nativeMode?: boolean;
@@ -231,9 +257,10 @@ export function PdfPage({
   link?: string;
   image?: { bytes: Uint8Array; type: 'png' | 'jpg'; aspect?: number };
   selected?: string;
+  selectedIds?: string[];
   onAdd?: (a: Annotation) => void;
   onUpdate?: (a: Annotation, group?: string) => void;
-  onSelect?: (id: string) => void;
+  onSelect?: (id: string, multiple?: boolean) => void;
   onError?: (error: string) => void;
   watermark?: string;
   numbering?: boolean;
@@ -248,36 +275,111 @@ export function PdfPage({
     [loading, setLoading] = useState(true),
     [draft, setDraft] = useState<Annotation>();
   const [printedBoxes, setPrintedBoxes] = useState<Box[]>([]);
+  const [ignoredBoxes, setIgnoredBoxes] = useState<Set<string>>(new Set());
   useEffect(() => {
-    if (!detectBoxes || !near || loading || !canvas.current || !baseViewport) {
-      setPrintedBoxes([]);
-      return;
-    }
-    const c = canvas.current;
-    const small = document.createElement('canvas');
-    const ratio = Math.min(1, Math.sqrt(2_000_000 / (c.width * c.height)));
-    small.width = Math.round(c.width * ratio);
-    small.height = Math.round(c.height * ratio);
-    const ctx = small.getContext('2d', { willReadFrequently: true })!;
-    ctx.drawImage(c, 0, 0, small.width, small.height);
-    const scale = small.width / baseViewport.width;
-    const boxes = detectPrintedBoxes(
-      ctx.getImageData(0, 0, small.width, small.height).data,
-      small.width,
-      small.height,
-      scale,
-    );
-    setPrintedBoxes(
-      boxes.map((b) => ({
-        x: b.x / scale,
-        y: b.y / scale,
-        width: b.width / scale,
-        height: b.height / scale,
-      })),
-    );
-    small.width = 0;
-    small.height = 0;
-  }, [detectBoxes, near, loading, baseViewport, zoom]);
+    setIgnoredBoxes(new Set());
+  }, [doc, reference.index, detectBoxes]);
+  useEffect(() => {
+    setPrintedBoxes([]);
+    if (!detectBoxes || !near || thumbnail) return;
+    const controller = new AbortController();
+    const scan = document.createElement('canvas');
+    let render: RenderTask | undefined;
+    void (async () => {
+      const page = await doc.getPage(reference.index + 1);
+      if (controller.signal.aborted) return;
+      // Scan in a canonical orientation, then keep only PDF coordinates.
+      // Changing view rotation never changes the candidates or their identity.
+      const base = page.getViewport({ scale: 1, rotation: 0 });
+      // Detection uses its own resolution, independent of zoom or screen DPR.
+      const scale = Math.min(2, Math.sqrt(2_000_000 / (base.width * base.height)));
+      const v = page.getViewport({ scale, rotation: 0 });
+      scan.width = Math.ceil(v.width);
+      scan.height = Math.ceil(v.height);
+      render = page.render({ canvas: scan, viewport: v, background: '#ffffff' });
+      await render.promise;
+      const data = scan
+        .getContext('2d', { willReadFrequently: true })!
+        .getImageData(0, 0, scan.width, scan.height).data;
+      const boxes = await findPrintedBoxes(
+        data,
+        scan.width,
+        scan.height,
+        scale * page.userUnit,
+        controller.signal,
+      );
+      const widgets = (await page.getAnnotations()).filter(
+        (a) => a.subtype === 'Widget' && a.checkBox,
+      );
+      const content = await page.getTextContent();
+      const textBounds = content.items.flatMap((item) => {
+        if (!('str' in item) || !item.str.trim() || /[☐☑☒□◻◽▢⬜■✓✔]/u.test(item.str)) return [];
+        const [a, b, c, d, e, f] = item.transform;
+        const length = Math.hypot(a, b) || 1;
+        const dx = (a / length) * item.width,
+          dy = (b / length) * item.width;
+        const points = [
+          [e - c * 0.25, f - d * 0.25],
+          [e + dx - c * 0.25, f + dy - d * 0.25],
+          [e + c, f + d],
+          [e + dx + c, f + dy + d],
+        ].map(([x, y]) => base.convertToViewportPoint(x, y));
+        return [
+          {
+            x: Math.min(...points.map((p) => p[0])),
+            y: Math.min(...points.map((p) => p[1])),
+            right: Math.max(...points.map((p) => p[0])),
+            bottom: Math.max(...points.map((p) => p[1])),
+          },
+        ];
+      });
+      if (!controller.signal.aborted)
+        setPrintedBoxes(
+          boxes
+            .map((b) => ({
+              ...b,
+              x: b.x / scale,
+              y: b.y / scale,
+              width: b.width / scale,
+              height: b.height / scale,
+            }))
+            .filter(
+              (b) =>
+                !textBounds.some((r) => {
+                  const overlap =
+                    Math.max(0, Math.min(b.x + b.width, r.right) - Math.max(b.x, r.x)) *
+                    Math.max(0, Math.min(b.y + b.height, r.bottom) - Math.max(b.y, r.y));
+                  return overlap > b.width * b.height * 0.5;
+                }) &&
+                !widgets.some((w) => {
+                  const r = [
+                    ...base.convertToViewportPoint(w.rect[0], w.rect[1]),
+                    ...base.convertToViewportPoint(w.rect[2], w.rect[3]),
+                  ];
+                  return (
+                    Math.abs((r[0] + r[2]) / 2 - b.x - b.width / 2) < b.width / 2 &&
+                    Math.abs((r[1] + r[3]) / 2 - b.y - b.height / 2) < b.height / 2
+                  );
+                }),
+            )
+            .map((b) => mapBox(b, (x, y) => base.convertToPdfPoint(x, y))),
+        );
+    })()
+      .catch((error) => {
+        if (!controller.signal.aborted && error?.name !== 'RenderingCancelledException')
+          onError?.(
+            'Impossible de repérer les cases sur cette page. Vous pouvez ajouter une case manuellement.',
+          );
+      })
+      .finally(() => {
+        scan.width = 0;
+        scan.height = 0;
+      });
+    return () => {
+      controller.abort();
+      render?.cancel();
+    };
+  }, [detectBoxes, near, thumbnail, doc, reference.index]);
   const viewport = baseViewport?.clone({
     scale: thumbnail ? Math.min(108 / baseViewport.width, 145 / baseViewport.height) : zoom,
   });
@@ -421,7 +523,7 @@ export function PdfPage({
     });
   }
   function editVisual(a: Annotation) {
-    if (!a.replacement) return;
+    if (!a.replacement || a.locked) return;
     const r = a.replacement,
       angle = (r.angle * Math.PI) / 180;
     setLiveTarget({
@@ -446,6 +548,7 @@ export function PdfPage({
         annotation: Annotation;
         draft: Annotation;
         move?: boolean;
+        resize?: { x: number; y: number };
       }
     | undefined
   >(undefined);
@@ -553,6 +656,7 @@ export function PdfPage({
     );
     return { x, y };
   }
+  const [guides, setGuides] = useState<Partial<Point>>({});
   function start(e: React.PointerEvent, a?: Annotation) {
     if (!viewport || thumbnail || readOnly || inline || (nativeMode && !a) || e.button !== 0)
       return;
@@ -577,7 +681,12 @@ export function PdfPage({
       return;
     }
     if (a && (tool === 'select' || tool === 'image')) {
-      onSelect?.(a.id);
+      if (e.shiftKey || e.ctrlKey || e.metaKey) {
+        onSelect?.(a.id, true);
+        return;
+      }
+      if (!selectedIds.includes(a.id)) onSelect?.(a.id);
+      if (a.locked) return;
       gesture.current = { pointerId: e.pointerId, start: p, annotation: a, draft: a, move: true };
       setDraft(a);
       return;
@@ -644,12 +753,30 @@ export function PdfPage({
     if (g.move) {
       const dx = p.x - g.start.x,
         dy = p.y - g.start.y;
-      g.draft = {
-        ...g.annotation,
-        x: g.annotation.x + dx,
-        y: g.annotation.y + dy,
-        points: g.annotation.points?.map((q) => ({ x: q.x + dx, y: q.y + dy })),
-      };
+      g.draft = moveObject(g.annotation, dx, dy);
+      if (!e.shiftKey) {
+        const snapped = snapObject(
+          g.draft,
+          reference.annotations.filter((a) => !selectedIds.includes(a.id)),
+          viewport!.viewBox,
+          5 / zoom,
+        );
+        g.draft = snapped.annotation;
+        setGuides(snapped.guides);
+      } else setGuides({});
+    } else if (g.resize) {
+      const a = g.annotation,
+        corner = g.resize;
+      const anchor = { x: corner.x ? a.x : a.x + a.width, y: corner.y ? a.y : a.y + a.height };
+      let w = Math.max(5, Math.abs(p.x - anchor.x)),
+        h = Math.max(5, Math.abs(p.y - anchor.y));
+      if (e.shiftKey) h = (w * a.height) / Math.max(1, a.width);
+      g.draft = resizeObject(a, {
+        x: corner.x ? anchor.x : anchor.x - w,
+        y: corner.y ? anchor.y : anchor.y - h,
+        width: w,
+        height: h,
+      });
     } else {
       const a = {
         ...g.annotation,
@@ -659,6 +786,14 @@ export function PdfPage({
         height: Math.abs(p.y - g.start.y),
       };
       a.points = tool === 'pen' ? [...(g.draft.points ?? [g.start]), p] : [g.start, p];
+      if (tool === 'pen') {
+        // The last point may return to the starting baseline. The hit area must
+        // cover the entire stroke, otherwise its center cannot be selected.
+        a.x = Math.min(g.draft.x, p.x);
+        a.y = Math.min(g.draft.y, p.y);
+        a.width = Math.max(g.draft.x + g.draft.width, p.x) - a.x;
+        a.height = Math.max(g.draft.y + g.draft.height, p.y) - a.y;
+      }
       g.draft = a;
     }
     setDraft(g.draft);
@@ -669,12 +804,13 @@ export function PdfPage({
       // Mouse-up can carry a newer position than React's last rendered state.
       move(e);
       const final = g.draft;
-      if (g.move) {
-        if (final.x !== g.annotation.x || final.y !== g.annotation.y) onUpdate?.(final);
+      if (g.move || g.resize) {
+        if (g.resize || final.x !== g.annotation.x || final.y !== g.annotation.y) onUpdate?.(final);
       } else if (final.width > 2 || final.height > 2) onAdd?.(final);
     }
     gesture.current = undefined;
     setDraft(undefined);
+    setGuides({});
     if (annotationLayer.current?.hasPointerCapture(e.pointerId))
       annotationLayer.current.releasePointerCapture(e.pointerId);
   }
@@ -684,8 +820,20 @@ export function PdfPage({
     <div
       className={`pdf-page ${thumbnail ? 'thumbnail-page' : ''} ${tool !== 'select' ? 'drawing-mode' : ''} ${nativeMode ? 'native-mode' : ''}`}
       ref={wrapper}
+      onPointerDownCapture={(e) => {
+        const target = e.target as Element;
+        if (
+          !thumbnail &&
+          tool === 'select' &&
+          !target.closest?.(
+            'input,textarea,select,button,[data-annotation-id],.live-text-editor,.inline-text-editor',
+          )
+        )
+          onSelect?.('');
+      }}
       onClick={(e) => {
-        const span = (e.target as HTMLElement).closest?.('.textLayer span');
+        const target = e.target as Element;
+        const span = target.closest?.('.textLayer span');
         if (span && nativeMode) {
           const selection = window.getSelection();
           let offsets: { start: number; end: number } | undefined;
@@ -728,6 +876,16 @@ export function PdfPage({
         <span className="page-loading">{thumbnail ? index + 1 : t('Chargement de la page…')}</span>
       )}
       {!thumbnail && <div className="textLayer" ref={textContainer} />}
+      {!thumbnail && viewport && searchQuery && (
+        <SearchHighlights
+          container={wrapper}
+          query={searchQuery}
+          active={activeOccurrence}
+          items={searchItems}
+          viewport={viewport}
+          revision={loading}
+        />
+      )}
       {liveTarget && viewport && nativeMode && onNativeEdits && onVisualEdit && (
         <LiveTextEditor
           key={liveTarget.key}
@@ -739,63 +897,70 @@ export function PdfPage({
           close={() => setLiveTarget(undefined)}
         />
       )}
-      {!thumbnail && near && viewport && onVisualEdit && (
-        <CheckboxLayer
+      {!thumbnail && viewport && onFormChange && (
+        <FormLayer
           doc={doc}
           page={reference}
           viewport={viewport}
-          enabled={!readOnly && !doc.isPureXfa}
-          change={onVisualEdit}
+          enabled={!readOnly && !doc.isPureXfa && tool === 'select'}
+          change={onFormChange}
           error={onError}
         />
       )}
       {!thumbnail && detectBoxes && viewport && (
         <div className="printed-checkbox-layer">
-          {printedBoxes.map((b, i) => {
-            const corners = [
-              [b.x, b.y],
-              [b.x + b.width, b.y + b.height],
-            ].map(([x, y]) => baseViewport!.convertToPdfPoint(x, y));
-            const x = Math.min(corners[0][0], corners[1][0]);
-            const y = Math.min(corners[0][1], corners[1][1]);
-            // PDF coordinates remain stable across zoom and raster rounding.
-            const existing = reference.annotations.find(
-              (a) => a.type === 'checkbox' && Math.abs(a.x - x) < 3 && Math.abs(a.y - y) < 3,
-            );
-            return (
-              <button
-                key={i}
-                className="printed-checkbox"
-                role="checkbox"
-                aria-checked={existing?.checked ?? false}
-                disabled={readOnly}
-                aria-label={`${t('Cocher la case imprimée')} ${i + 1}`}
-                title={t('Case probable · cliquer pour cocher')}
-                style={{
-                  left: b.x * zoom,
-                  top: b.y * zoom,
-                  width: b.width * zoom,
-                  height: b.height * zoom,
-                }}
-                onClick={() => {
-                  onVisualEdit?.(
-                    {
-                      id: existing?.id ?? uid(),
-                      type: 'checkbox',
-                      checked: !existing?.checked,
-                      x,
-                      y,
-                      width: Math.abs(corners[1][0] - corners[0][0]),
-                      height: Math.abs(corners[1][1] - corners[0][1]),
-                      color: '#17213a',
-                      size: 12,
-                    },
-                    crypto.randomUUID(),
-                  );
-                }}
-              />
-            );
-          })}
+          {printedBoxes
+            .filter((b) => !ignoredBoxes.has(boxKey(b)))
+            .map((b, i) => {
+              const screen = mapBox(b, (x, y) => viewport.convertToViewportPoint(x, y));
+              const existing = reference.annotations.find(
+                (a) => a.type === 'checkbox' && sameBox(a, b),
+              );
+              const hide = () => setIgnoredBoxes((old) => new Set(old).add(boxKey(b)));
+              return (
+                <button
+                  key={boxKey(b)}
+                  className="printed-checkbox"
+                  role="checkbox"
+                  aria-checked={existing?.checked ?? b.checked ?? false}
+                  disabled={readOnly}
+                  aria-label={`${t('Cocher la case imprimée')} ${i + 1}`}
+                  title={t('Cliquer pour cocher · clic droit pour masquer le repère')}
+                  aria-keyshortcuts="Delete"
+                  style={{
+                    left: screen.x,
+                    top: screen.y,
+                    width: screen.width,
+                    height: screen.height,
+                  }}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    hide();
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Delete' || event.key === 'Backspace') {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      hide();
+                    }
+                  }}
+                  onClick={() => {
+                    onVisualEdit?.(
+                      {
+                        ...(existing ?? b),
+                        id: existing?.id ?? uid(),
+                        type: 'checkbox',
+                        checked: !(existing?.checked ?? b.checked ?? false),
+                        color: existing?.color ?? '#17213a',
+                        size: existing?.size ?? 12,
+                      },
+                      crypto.randomUUID(),
+                    );
+                  }}
+                />
+              );
+            })}
         </div>
       )}
       {inline &&
@@ -854,13 +1019,26 @@ export function PdfPage({
         >
           <g transform={`matrix(${viewport.transform.join(' ')})`}>
             {reference.annotations
-              .filter((a) => a.id !== inline?.annotation.id)
+              .filter((a) => !a.hidden && a.id !== inline?.annotation.id)
               .map((stored) => {
-                const a = draft?.id === stored.id ? draft : stored;
+                const a =
+                  draft?.id === stored.id
+                    ? draft
+                    : draft &&
+                        gesture.current?.move &&
+                        selectedIds.includes(stored.id) &&
+                        !stored.locked
+                      ? moveObject(
+                          stored,
+                          draft.x - gesture.current.annotation.x,
+                          draft.y - gesture.current.annotation.y,
+                        )
+                      : stored;
                 return (
                   <g
                     key={a.id}
                     data-annotation-id={a.id}
+                    data-annotation-type={a.type}
                     style={{ pointerEvents: thumbnail ? 'none' : 'visiblePainted' }}
                     onPointerDown={(e) => {
                       if (nativeMode && a.replacement) {
@@ -872,6 +1050,7 @@ export function PdfPage({
                       if (
                         !thumbnail &&
                         !nativeMode &&
+                        !a.locked &&
                         ['text', 'note', 'stamp', 'link'].includes(a.type)
                       ) {
                         e.stopPropagation();
@@ -890,7 +1069,7 @@ export function PdfPage({
                       pointerEvents={thumbnail || readOnly ? 'none' : 'all'}
                     />
                     <AnnotationShape a={a} />
-                    {selected === a.id && !thumbnail && (
+                    {(selectedIds.includes(a.id) || selected === a.id) && !thumbnail && (
                       <rect
                         x={a.x - 3}
                         y={a.y - 3}
@@ -902,10 +1081,80 @@ export function PdfPage({
                         strokeDasharray="3 2"
                       />
                     )}
+                    {selected === a.id &&
+                      selectedIds.length <= 1 &&
+                      !a.locked &&
+                      !a.replacement &&
+                      !thumbnail &&
+                      !readOnly &&
+                      [
+                        [0, 0],
+                        [1, 0],
+                        [0, 1],
+                        [1, 1],
+                      ].map(([cx, cy]) => (
+                        <rect
+                          key={`${cx}${cy}`}
+                          role="button"
+                          tabIndex={-1}
+                          aria-label={t('Redimensionner l’objet')}
+                          data-resize-corner={`${cx}${cy}`}
+                          x={a.x + cx * a.width - 4 / zoom}
+                          y={a.y + cy * a.height - 4 / zoom}
+                          width={8 / zoom}
+                          height={8 / zoom}
+                          fill="white"
+                          stroke="#6456ed"
+                          strokeWidth={1 / zoom}
+                          style={{
+                            cursor: cx === cy ? 'nesw-resize' : 'nwse-resize',
+                            pointerEvents: 'all',
+                          }}
+                          onPointerDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            annotationLayer.current!.setPointerCapture(e.pointerId);
+                            gesture.current = {
+                              pointerId: e.pointerId,
+                              start: point(e),
+                              annotation: a,
+                              draft: a,
+                              resize: { x: cx, y: cy },
+                            };
+                            setDraft(a);
+                          }}
+                        />
+                      ))}
                   </g>
                 );
               })}
-            {draft && !gesture.current?.move && <AnnotationShape a={draft} />}
+            {draft && !gesture.current?.move && !gesture.current?.resize && (
+              <AnnotationShape a={draft} />
+            )}
+            {guides.x !== undefined && (
+              <line
+                className="alignment-guide"
+                x1={guides.x}
+                x2={guides.x}
+                y1={viewport.viewBox[1]}
+                y2={viewport.viewBox[3]}
+                stroke="#ef4c9a"
+                strokeWidth={1 / zoom}
+                strokeDasharray={`${4 / zoom}`}
+              />
+            )}
+            {guides.y !== undefined && (
+              <line
+                className="alignment-guide"
+                y1={guides.y}
+                y2={guides.y}
+                x1={viewport.viewBox[0]}
+                x2={viewport.viewBox[2]}
+                stroke="#ef4c9a"
+                strokeWidth={1 / zoom}
+                strokeDasharray={`${4 / zoom}`}
+              />
+            )}
           </g>
           {(() => {
             const wm = watermarkFor(watermark, watermarkOptions);

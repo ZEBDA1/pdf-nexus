@@ -4,6 +4,35 @@ Ce document conserve l'historique complet des versions, correctifs et évolution
 
 ---
 
+## Mise à jour locale 1.7.0 — brouillons, formulaires, objets et export guidé
+
+- Sauvegarde des brouillons et de leur historique limité dans IndexedDB, reprise sur l’accueil, heure de sauvegarde, erreur/réessai, quotas et effacement. PDF chiffrés et secrets de connexion exclus.
+- Formulaires natifs : texte, plusieurs lignes, cases, radios, listes, Tab et valeurs communes entre widgets. Reconstruction sûre des champs compatibles à l’export ; copies aplaties séparées.
+- Panneau des objets par page : nom, visibilité, verrouillage, ordre, suppression, sélection multiple, copier/coller interne. Les propriétés restent rééditables après export Nexus.
+- Export avec aperçu du fichier final : continuer dans Nexus ou partager une copie aplatie sans objets masqués ni données de réédition. Information explicite sur les champs et les limites de confidentialité.
+- Polices des ajouts, plusieurs lignes, poignées de redimensionnement, guides d’alignement ; recherche surlignée avec occurrence suivante/précédente ; remplacement exact avec avant/après, sélection et exclusion des blocs incompatibles.
+- Interface avec reprise visible, statut de sauvegarde et commandes contextuelles, français/anglais. Aucun changement de permissions et aucune publication pour cette mise à jour locale.
+
+Les blocs natifs restent sur une ligne ; les corrections visuelles conservent le contenu recouvert. Ni édition universelle, ni caviardage sécurisé, ni signature par certificat ne sont annoncés. Détails dans [IMPLEMENTATION-ROADMAP.md](IMPLEMENTATION-ROADMAP.md).
+
+## Correctif local 1.6.9 — faux repères des cases à cocher
+
+Un scan riche en texte pouvait produire des dizaines de faux repères : le détecteur confondait les espaces fermés de B, P ou O avec l'intérieur d'une case. La validation exige maintenant quatre coins suffisamment marqués, des bords droits et un contour cohérent avec la composante d'encre complète. Elle préfère manquer une forme ambiguë plutôt que de recouvrir un mot. Le scan de régression contenant sept lignes de lettres et trois cases passait de 139 repères à trois avec ce correctif.
+
+La détection se fait dans une orientation fixe, puis les coordonnées PDF sont projetées selon la rotation, le recadrage et le zoom de la vue. Les propositions sont plus discrètes. Un clic droit ou Suppr sur un repère le masque pour la session de repérage, sans modifier le PDF ; désactiver puis réactiver le repérage restaure les propositions. La bascule d'une case déjà ajoutée conserve sa géométrie et ses réglages. Les widgets de formulaire restent distincts des propositions imprimées.
+
+La détection visuelle reste indicative : les formes arrondies, peu contrastées ou accolées à des mots peuvent être écartées. Le repérage ne prétend pas reconnaître tous les champs. Les prochaines évolutions recommandées figurent dans [la feuille de route](ROADMAP.fr.md).
+
+## Mise à jour locale 1.6.8 — ajouts rééditables et cases mieux repérées
+
+Le texte ajouté utilise le noir par défaut, indépendamment de la couleur choisie pour les dessins. Les nouveaux exports conservent les annotations Nexus comme des éléments modifiables à la réouverture : texte ajouté, cases, dessins, formes, images et signatures visuelles peuvent être sélectionnés, déplacés ou supprimés. Leur apparence reste visible dans les autres lecteurs. Les données stockées dans le PDF se limitent aux ajouts actuels et aux flux de base de la page exportée ; aucun document source complet ni historique d'annulation n'est joint.
+
+Les anciens exports aplatis ne permettent pas de récupérer automatiquement les objets séparés. Les filigranes et la pagination restent intégrés au fond de page, les modifications natives sont appliquées au texte et les conversions en images/OCR aplatissent le résultat. Un autre logiciel peut retirer les données d'édition Nexus lors d'un nouvel enregistrement. L'effacement Info/XMP conserve les informations nécessaires pour rééditer les ajouts ; il ne constitue pas un caviardage sécurisé.
+
+Une vérification du contenu évite de remplacer silencieusement des changements effectués par un autre éditeur. Les cases restaurées peuvent aussi être cochées ou décochées depuis leur barre de sélection. Les dessins utilisent l'ensemble du tracé pour leur zone de sélection, même lorsque le dernier point revient sur la ligne de départ.
+
+Le repérage des cases utilise un rendu dédié indépendant du zoom, puis un worker local. Il prend en charge les contours gris ou fins, les petits carrés, les légères interruptions et les cases déjà marquées. Les cases de formulaire interactives ne reçoivent pas de doublon de détection.
+
 ## Correctif 1.6.7 — OCR entièrement local pour Manifest V3
 
 Les valeurs CDN de secours incluses par défaut dans Tesseract.js ont été retirées du code livré. Le Worker OCR est créé directement depuis le paquet de l’extension, refuse une origine différente et charge uniquement les moteurs et données linguistiques embarqués. Un audit de production bloque désormais la création de l’archive si une URL CDN ou un Worker distant réapparaît dans un fichier exécutable.

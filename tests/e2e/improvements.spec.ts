@@ -84,6 +84,7 @@ test('Saisie sur page, remplacement natif, annulation et filigrane réellement e
   await page.getByRole('button', { name: 'Fermer', exact: true }).click();
   const pending = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Exporter le PDF', exact: true }).click();
+  await page.getByRole('button', { name: 'Télécharger le PDF', exact: true }).click();
   const bytes = await readFile((await (await pending).path())!);
   const result = await page.evaluate(async (data) => {
     const { loadPdf, extractAll } = await import('/' + 'src/pdf/reader.ts');

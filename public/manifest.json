@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PDF Nexus",
-  "version": "1.6.7",
+  "version": "1.7.0",
   "author": "ZEBDA",
   "description": "__MSG_extensionDescription__",
   "default_locale": "fr",

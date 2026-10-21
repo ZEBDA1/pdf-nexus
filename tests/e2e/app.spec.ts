@@ -51,6 +51,7 @@ test('Tableau de bord, édition, export, historique et suppression locale', asyn
   await page.getByRole('button', { name: 'Faire pivoter la page courante', exact: true }).click();
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Exporter le PDF', exact: true }).click();
+  await page.getByRole('button', { name: 'Télécharger le PDF', exact: true }).click();
   const download = await downloadPromise;
   const bytes = await readFile((await download.path())!);
   const pdf = await PDFDocument.load(bytes);
@@ -77,7 +78,7 @@ test('Tableau de bord, édition, export, historique et suppression locale', asyn
   page.once('dialog', (dialog) => dialog.accept());
   await page
     .getByRole('button', {
-      name: 'Effacer les documents récents, échanges et clé API',
+      name: 'Effacer les données locales',
       exact: true,
     })
     .click();

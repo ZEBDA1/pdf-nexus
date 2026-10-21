@@ -1,5 +1,8 @@
+import { replacementFontForText } from './text-style';
 import { applyNativeEdits } from './native-text';
 import { watermarkFor, watermarkPositions } from './watermark';
+import { preserveEditablePage, sealEditablePage } from './editable';
+import { FormBuilder, flattenUnsupportedFields } from './forms';
 import {
   PDFDocument,
   PDFName,
@@ -8,10 +11,10 @@ import {
   degrees,
   StandardFonts,
   type PDFFont,
-  type PDFPage,
+  PDFPage,
 } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
-import type { Annotation, Workspace, Source } from '../types';
+import type { Annotation, Workspace, Source, ExportOptions } from '../types';
 import { safeUrl } from '../utils/files';
 import type { RasterPage } from '../workers/client';
 
@@ -54,6 +57,7 @@ export async function drawAnnotation(
   a: Annotation,
   font: PDFFont,
 ) {
+  if (a.hidden) return;
   const c = color(a.color);
   const { x, y, width, height, size } = a;
   const stroke = (start: { x: number; y: number }, end: { x: number; y: number }) =>
@@ -102,13 +106,16 @@ export async function drawAnnotation(
         font: chosen,
         color: c,
         rotate: degrees(r.angle),
+        lineHeight: size * 1.3,
       });
   } else if (['text', 'note', 'stamp', 'link'].includes(a.type)) {
+    const face = replacementFontForText(a.font ?? 'Noto Sans', a.text ?? '');
+    const chosen = face === 'Noto Sans' ? font : await doc.embedFont(face as StandardFonts);
     if (a.type === 'note')
       page.drawRectangle({ x, y, width, height, color: rgb(1, 0.96, 0.78), opacity: 0.94 });
     if (a.type === 'stamp')
       page.drawRectangle({ x, y, width, height, borderColor: c, borderWidth: 1.5 });
-    const lines = wrapText(a.text ?? '', font, size, Math.max(10, width - 8));
+    const lines = wrapText(a.text ?? '', chosen, size, Math.max(10, width - 8));
     const max = Math.max(1, Math.floor((height - 4) / (size * 1.3)));
     if (lines.length > max)
       throw new Error(
@@ -118,7 +125,7 @@ export async function drawAnnotation(
       x: x + 4,
       y: y + height - size - 3,
       size,
-      font,
+      font: chosen,
       color: c,
       lineHeight: size * 1.3,
     });
@@ -181,12 +188,15 @@ export async function exportWorkspace(
   workspace: Workspace,
   fontBytes: Uint8Array,
   progress?: (n: number) => void,
+  options: ExportOptions = { mode: 'editable', preserveForms: false },
 ) {
   if (workspace.encrypted) throw new Error('L’export des PDF chiffrés n’est pas pris en charge.');
   if (!workspace.pages.length) throw new Error('Le document doit contenir au moins une page.');
   const output = await PDFDocument.create();
   const font = await embedFont(output, fontBytes);
   const sources = new Map<number, PDFDocument>();
+  const forms = new FormBuilder(output, font);
+  const occurrences = new Map<string, number>();
   for (let i = 0; i < workspace.pages.length; i++) {
     const ref = workspace.pages[i];
     let source = sources.get(ref.source);
@@ -205,18 +215,23 @@ export async function exportWorkspace(
         updateMetadata: false,
       });
       await applyNativeEdits(pageSource.getPage(ref.index), ref.nativeEdits ?? [], fontBytes);
-      pageSource.getForm().flatten({ updateFieldAppearances: true });
+      flattenUnsupportedFields(pageSource);
     }
     // Strip before copying so disconnected original objects are not serialized in the output.
     const sourcePage = pageSource.getPage(ref.index);
     sourcePage.node.delete(PDFName.of('Annots'));
     sourcePage.node.delete(PDFName.of('AA'));
     sourcePage.node.delete(PDFName.of('Metadata'));
+    sourcePage.node.delete(PDFName.of('NexusEdits'));
     const [page] = await output.copyPages(pageSource, [ref.index]);
     page.setRotation(degrees((page.getRotation().angle + ref.rotation) % 360));
     output.addPage(page);
+    page.node.set(PDFName.of('Tabs'), PDFName.of('R'));
     if (!hasForm) await applyNativeEdits(page, ref.nativeEdits ?? [], fontBytes);
-    for (const a of ref.annotations) await drawAnnotation(output, page, a, font);
+    const original = `${ref.source}:${ref.index}`;
+    const occurrence = (occurrences.get(original) ?? 0) + 1;
+    occurrences.set(original, occurrence);
+    forms.addPage(source, page, ref, ref.formGroup ?? `${ref.source}:${occurrence}`);
     const wm = watermarkFor(workspace.watermark, workspace.watermarkOptions);
     const angle = (wm.angle * Math.PI) / 180;
     const wmWidth = font.widthOfTextAtSize(wm.text, wm.size);
@@ -238,7 +253,21 @@ export async function exportWorkspace(
         font,
         color: rgb(0.4, 0.4, 0.45),
       });
-    progress?.((i + 1) / workspace.pages.length);
+    progress?.(((i + 1) / workspace.pages.length) * 0.65);
+  }
+  forms.finish();
+  if (!options.preserveForms || options.mode === 'flattened')
+    output.getForm().flatten({ updateFieldAppearances: false });
+  for (const [i, page] of output.getPages().entries()) {
+    const ref = workspace.pages[i];
+    // Native widget choices now live in real form fields, not a second painted
+    // checkbox. Keep ordinary additions in a separate editable content stream.
+    const annotations = ref.annotations.filter((a) => !a.id.startsWith('widget-'));
+    if (options.mode === 'editable') preserveEditablePage(page, annotations);
+    const additions = PDFPage.of(page.node, page.ref, output);
+    for (const a of annotations) await drawAnnotation(output, additions, a, font);
+    await sealEditablePage(page);
+    progress?.(0.65 + ((i + 1) / workspace.pages.length) * 0.35);
   }
   if (!workspace.cleanMetadata) {
     const source = sources.get(workspace.pages[0].source)!;

@@ -71,6 +71,7 @@ test('Zoom du PDF seul et modification de tous les textes sur plusieurs pages', 
   await page.screenshot({ path: 'test-results/all-text.png' });
   const pending = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Exporter le PDF', exact: true }).click();
+  await page.getByRole('button', { name: 'Télécharger le PDF', exact: true }).click();
   const bytes = await readFile((await (await pending).path())!);
   const text = await page.evaluate(async (bytes) => {
     const { loadPdf, extractAll } = await import('/' + 'src/pdf/reader.ts');

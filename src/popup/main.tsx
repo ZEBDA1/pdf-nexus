@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { listDrafts } from '../storage/drafts';
 import { getPreferences, stageFile } from '../storage';
 import { readFile, errorMessage } from '../utils/files';
 import { t, setLanguage } from '../i18n';
@@ -19,11 +20,15 @@ import { OpeningControl } from '../components/OpeningControl';
 import { version } from '../../package.json';
 function Popup() {
   const input = useRef<HTMLInputElement>(null);
+  const [draftCount, setDraftCount] = useState(0);
   const [activeTab, setActiveTab] = useState<chrome.tabs.Tab>();
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [, refresh] = useState(0);
   useEffect(() => {
+    void listDrafts()
+      .then((list) => setDraftCount(list.length))
+      .catch(() => {});
     void chrome.tabs
       .query({ active: true, currentWindow: true })
       .then(([tab]) => setActiveTab(tab));
@@ -43,31 +48,6 @@ function Popup() {
   return (
     <div className="popup">
       <Brand compact />
-      <section className="popup-web">
-        <strong>{t('Utiliser Nexus comme lecteur PDF')}</strong>
-        <OpeningControl compact />
-        <button className="button subtle" onClick={() => open('#settings')}>
-          {t('Configurer les PDF locaux et téléchargés')}
-        </button>
-        {activeTab?.url && /^https?:/.test(activeTab.url) && (
-          <button
-            className="button primary"
-            onClick={async () => {
-              try {
-                await openTabInNexus(activeTab);
-                window.close();
-              } catch (e) {
-                setError(errorMessage(e));
-              }
-            }}
-          >
-            {t('Ouvrir le PDF de cet onglet dans Nexus')}
-          </button>
-        )}
-        <small>
-          {t('Les liens PDF s’ouvrent dans cet onglet avec l’interface Nexus après autorisation.')}
-        </small>
-      </section>
       <input
         hidden
         ref={input}
@@ -99,6 +79,12 @@ function Popup() {
       <Button className="primary popup-open" disabled={busy} onClick={() => input.current?.click()}>
         <FilePlus2 size={19} /> {t('Ouvrir un PDF')} <ArrowUpRight size={18} />
       </Button>
+      {draftCount > 0 && (
+        <Button className="popup-resume" onClick={() => open()}>
+          {t('Reprendre mon travail ({count})', { count: draftCount })}
+          <ArrowUpRight size={16} />
+        </Button>
+      )}
       <div className="popup-grid">
         <button onClick={() => open('#tools')}>
           <Combine />
@@ -117,6 +103,31 @@ function Popup() {
           {t('Assistant IA')}
         </button>
       </div>
+      <section className="popup-web">
+        <strong>{t('Utiliser Nexus comme lecteur PDF')}</strong>
+        <OpeningControl compact />
+        <button className="button subtle" onClick={() => open('#settings')}>
+          {t('Configurer les PDF locaux et téléchargés')}
+        </button>
+        {activeTab?.url && /^https?:/.test(activeTab.url) && (
+          <button
+            className="button primary"
+            onClick={async () => {
+              try {
+                await openTabInNexus(activeTab);
+                window.close();
+              } catch (e) {
+                setError(errorMessage(e));
+              }
+            }}
+          >
+            {t('Ouvrir le PDF de cet onglet dans Nexus')}
+          </button>
+        )}
+        <small>
+          {t('Les liens PDF s’ouvrent dans cet onglet avec l’interface Nexus après autorisation.')}
+        </small>
+      </section>
       <footer>
         <span>
           <LockKeyhole size={13} />

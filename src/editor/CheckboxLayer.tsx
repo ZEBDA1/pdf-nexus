@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { PDFDocumentProxy, PageViewport } from 'pdfjs-dist';
 import type { Annotation, PageRef } from '../types';
 import { t } from '../i18n';
+import { mapBox } from '../pdf/geometry';
 
 interface Widget {
   id: string;
@@ -57,8 +58,15 @@ export function CheckboxLayer({
       {widgets.map((w) => {
         const id = `widget-${w.id}`;
         const a = page.annotations.find((a) => a.id === id);
-        const [x1, y1] = viewport.convertToViewportPoint(w.rect[0], w.rect[1]);
-        const [x2, y2] = viewport.convertToViewportPoint(w.rect[2], w.rect[3]);
+        const screen = mapBox(
+          {
+            x: w.rect[0],
+            y: w.rect[1],
+            width: w.rect[2] - w.rect[0],
+            height: w.rect[3] - w.rect[1],
+          },
+          (x, y) => viewport.convertToViewportPoint(x, y),
+        );
         const checked = a?.checked ?? w.checked;
         return (
           <input
@@ -70,10 +78,10 @@ export function CheckboxLayer({
             checked={checked}
             disabled={!enabled || w.readOnly}
             style={{
-              left: Math.min(x1, x2),
-              top: Math.min(y1, y2),
-              width: Math.abs(x2 - x1),
-              height: Math.abs(y2 - y1),
+              left: screen.x,
+              top: screen.y,
+              width: screen.width,
+              height: screen.height,
             }}
             onChange={(e) =>
               change(

@@ -101,6 +101,7 @@ test('Formulaire réel : sélection partielle, saisie sur page, zoom rapide et d
   await page.screenshot({ path: 'test-results/rouen-nexus.png' });
   const exported = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Exporter le PDF', exact: true }).click();
+  await page.getByRole('button', { name: 'Télécharger le PDF', exact: true }).click();
   const bytes = await readFile((await (await exported).path())!);
   const text = await page.evaluate(async (data) => {
     const { loadPdf, extractAll } = await import('/' + 'src/pdf/reader.ts');

@@ -1,4 +1,41 @@
-# Validation — 10 octobre 2026
+# Validation locale — 20 octobre 2026
+
+## Version locale 1.7.0
+
+- `npm run check` : 64 tests unitaires réussis, 708 libellés sans traduction manquante, TypeScript et build réussis. Audit de 25 fichiers exécutables : aucun code CDN distant. Le build conserve un avertissement Vite sur la taille des bundles ; le chargement de 120 pages et l’OCR restent vérifiés séparément.
+- Les nouvelles suites couvrent reprise/annulation/rotation des brouillons, quota, limite commune de vingt actions, exclusion des secrets, désactivation et effacement des trois magasins. Les vrais formulaires sont remplis avec Tab sur plusieurs pages ; leurs valeurs Unicode, options d’affichage/export, cases, radios et lecture seule sont relues avec pdf-lib et leur rendu avec PDF.js.
+- Le panneau des objets est testé pour noms, masquage, verrouillage, ordre, sélection multiple, copie entre pages, suppression et annulation. Le redimensionnement est vérifié après rotation et zoom ; les polices et plusieurs lignes sont exportées. Le remplacement exact propose un avant/après et exclut réellement le texte en contour ; la recherche surligne et parcourt les occurrences.
+- Les deux modes d’export sont vérifiés sur leurs octets finaux : champs interactifs dans la copie Nexus, absence de champs et de données `NexusEdits` dans la copie aplatie, exclusion des objets masqués et conservation des valeurs visibles.
+- Un premier passage complet a réussi 48 scénarios sur 49. L’ancien scénario de correction visuelle attendait qu’Entrée ferme la saisie ; il est adapté à Entrée pour une nouvelle ligne et Ctrl+Entrée pour terminer. Le contrôle multiligne a ensuite mis en évidence une zone de sélection trop haute : corrigée en conservant la première ligne et le masque d’origine. La réédition, le déplacement, l’annulation et les positions dans le PDF final passent en relance ciblée.
+- Un test supplémentaire de fichier partiellement endommagé vérifie que `BaseAnnots` est validé avant toute mutation : une page récupérable ne provoque pas la perte du rendu d’une autre page invalide.
+- Validation navigateur finale : **49 scénarios réussis sur 49** lors d’un passage complet (5,2 min). Chromium, Chrome et Microsoft Edge sont utilisés dans des profils temporaires. Les parcours compilés hors connexion vérifient les brouillons, formulaires et deux exports sur Chrome et Edge, sans requête externe. Après un dernier ajustement de la police des corrections visuelles dans l’inspecteur, `npm run check` passe à nouveau et les quatre scénarios ciblés de saisie/export et d’extension compilée passent également.
+- Paquet contrôlé : `manifest.json` à la racine, aucun dossier `src` ou `public` dans l’archive installable ; permissions inchangées (`storage`, `activeTab` ; `webRequest` et `downloads` facultatives). Les profils temporaires de test préaccordent certaines permissions : ils ne valident pas tous les dialogues de consentement du profil personnel.
+- Livrables : `dist/`, `release/pdf-nexus-1.7.0.zip`, `release/pdf-nexus-source-1.7.0.zip` et [réalisation des cinq priorités](IMPLEMENTATION-ROADMAP.md). Aucun envoi GitHub ou Store.
+
+Les limites restent explicites : vingt actions au maximum après reprise, stockage navigateur non équivalent à une sauvegarde externe, champs XFA/texte riche/mot de passe et scripts exclus, adaptation des polices de champs, blocs natifs sur une ligne, corrections visuelles conservant l’original, absence de caviardage sécurisé et de signatures numériques. Le repérage des cases reste conservateur.
+
+## Version 1.6.9
+
+- `npm run check` : 54 tests unitaires réussis, aucun libellé non traduit, aucune erreur TypeScript, build et audit de code distant réussis.
+- Suite navigateur complète : 38 scénarios réussis sur 39 au premier passage. Le seul échec concerne la reprise de l'ouverture automatique après redémarrage de Chrome (`opening-recovery.spec.ts`, attente du lecteur à la ligne 112). Ce scénario passe ensuite deux fois de suite lors d'une relance isolée ; l'intermittence est consignée, sans attribuer une cause non démontrée. Tous les scénarios de cases, y compris dans les trois navigateurs compilés, passent dès le passage complet.
+- Régression reproduite avant correction : un PDF constitué d'une image avec sept lignes de lettres et trois cases produisait 139 repères. Le même test attend et obtient maintenant trois propositions, positionnées sur les cases. Les premiers tests de scans de 1.6.8 ne comportaient pas assez de texte pour révéler ce défaut.
+- `checkbox-detection-regression.spec.ts` vérifie le scan textuel, les positions, le masquage par clic droit et Suppr sans créer d'annotation, la restauration des propositions au redémarrage du repérage, le recadrage, quatre rotations successives et les zooms 50/150/200/100 % sans déplacer ni dupliquer une case cochée.
+- `checkbox-extension.spec.ts` passe sur le dossier `dist` compilé chargé dans des profils temporaires Chromium, Microsoft Edge et Chrome : scan riche en texte, trois vraies cases, widget natif séparé, cocher, masquer et absence de requête externe hors connexion.
+- Les six scénarios ciblés de détection, réédition et localisation passent. La détection reste volontairement conservatrice pour les formes arrondies, dégradées ou accolées à des mots ; les propositions ne sont pas une reconnaissance universelle des formulaires.
+- Livrables locaux : `dist/`, `release/pdf-nexus-1.6.9.zip`, archive source et `docs/ROADMAP.fr.md`. Aucun envoi vers GitHub ou le Store pour cette mise à jour locale.
+
+## Version 1.6.8
+
+- `npm run check` : 54 tests unitaires, audit des traductions, vérification TypeScript, build et audit de code distant réussis.
+- Suite Playwright complète : 34 scénarios réussis, avec profils d'extension temporaires Chromium, Chrome et Microsoft Edge. Le passage ciblé final vérifie aussi la réouverture puis la suppression d'un ajout dans l'extension compilée hors connexion.
+- `tests/editable.test.ts` couvre les familles d'annotations et les images, la conservation des modifications natives, la suppression après réouverture, les cycles successifs sans doublons, les filigranes/pagination/rotation, Info/XMP, les données invalides et les changements apportés par un autre éditeur. Aucune page source retirée n'est jointe au fichier exporté.
+- `tests/checkboxes.test.ts` couvre les cases vides ou marquées, les petites dimensions, le gris, les traits fins, les interruptions, les cases attachées à une ligne, les faux positifs simples et les limites mémoire.
+- `tests/e2e/reeditable.spec.ts` vérifie le texte noir indépendamment de la couleur des dessins, une nouvelle session après export, la sélection et la suppression des ajouts, le résultat PDF réellement rendu, et les cases fines/grises/cochées/scannées aux zooms 50 %, 150 % et 200 %.
+- Livrables locaux : `dist/`, `release/pdf-nexus-1.6.8.zip` et archive source correspondante. Aucune publication GitHub ni soumission Store effectuée pour cette mise à jour.
+
+Limites : les anciens exports aplatis ne contiennent pas les données nécessaires à la séparation automatique des ajouts. La détection des cases reste indicative, notamment sur les scans ; elle n'est pas une reconnaissance sémantique. Les filigranes/pagination et les exports raster/OCR restent aplatis. La conservation des données de réédition n'est pas garantie après enregistrement par un autre logiciel.
+
+# Historique de validation — 10 octobre 2026
 
 ## Résultats observés
 

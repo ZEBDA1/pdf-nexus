@@ -1,11 +1,14 @@
 import { openDB } from 'idb';
 import { defaultPreferences, type Preferences, type ChatMessage, type Source } from '../types';
-const db = () =>
-  openDB('pdf-nexus', 2, {
+export const db = () =>
+  openDB('pdf-nexus', 3, {
     upgrade(d) {
       if (!d.objectStoreNames.contains('recent')) d.createObjectStore('recent', { keyPath: 'id' });
       if (!d.objectStoreNames.contains('chat')) d.createObjectStore('chat');
       if (!d.objectStoreNames.contains('pending')) d.createObjectStore('pending');
+      if (!d.objectStoreNames.contains('drafts')) d.createObjectStore('drafts', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('draftStates')) d.createObjectStore('draftStates');
+      if (!d.objectStoreNames.contains('draftSources')) d.createObjectStore('draftSources');
     },
   });
 export interface Recent {
@@ -76,6 +79,8 @@ export async function saveChat(id: string, m: ChatMessage[]) {
   }
 }
 export async function clearData() {
+  const { clearDrafts } = await import('./drafts');
+  await clearDrafts();
   const d = await db();
   try {
     await d.clear('recent');

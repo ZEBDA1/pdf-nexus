@@ -260,6 +260,19 @@ export function Settings({
         <label className="check-field">
           <input
             type="checkbox"
+            checked={prefs.autoSave}
+            onChange={(e) => update({ ...prefs, autoSave: e.target.checked })}
+          />
+          {t('Sauvegarder automatiquement les brouillons sur cet appareil')}
+        </label>
+        <p className="muted">
+          {t(
+            '5 brouillons et 250 Mio maximum. Les 20 dernières actions sont conservées dans la limite de 20 Mio. Les PDF protégés et les clés API sont exclus.',
+          )}
+        </p>
+        <label className="check-field">
+          <input
+            type="checkbox"
             checked={prefs.remember}
             onChange={(e) => update({ ...prefs, remember: e.target.checked })}
           />{' '}
@@ -267,12 +280,12 @@ export function Settings({
         </label>
         <p className="muted">
           {t(
-            '10 documents maximum, jusqu’à 100 Mio au total. Les brouillons d’annotation restent en mémoire. Aucun tracker ni envoi automatique.',
+            '10 documents récents maximum, jusqu’à 100 Mio au total. Les brouillons automatiques ont leur propre espace local. Aucun tracker ni envoi automatique.',
           )}
         </p>
         <Button className="danger" onClick={clear}>
           <Trash2 size={16} />
-          {t('Effacer les documents récents, échanges et clé API')}
+          {t('Effacer les données locales')}
         </Button>
         <p className="muted">
           {t(
@@ -288,7 +301,7 @@ export function Settings({
         </p>
         <p>
           {t(
-            'Annotations superposées aplaties à l’export. Pas d’édition universelle du texte natif, de caviardage sécurisé ni de protection par mot de passe. Les signatures numériques ne sont pas conservées à l’export.',
+            'Les ajouts exportés depuis cette version restent modifiables dans Nexus. Les anciens exports aplatis ne peuvent pas être séparés automatiquement. Pas de caviardage sécurisé ni de conservation des signatures numériques.',
           )}
         </p>
         <a href="./licenses.json" target="_blank" rel="noreferrer">

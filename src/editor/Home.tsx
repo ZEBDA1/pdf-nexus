@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { Button, PrivacyBadge, SectionTitle, CardArrow, IconButton } from '../components/ui';
 import type { Recent } from '../storage';
+import type { DraftInfo } from '../storage/drafts';
 import { fileSize } from '../utils/files';
 export const tools = [
   {
@@ -47,6 +48,9 @@ export const tools = [
   },
 ];
 export function Home({
+  drafts,
+  resumeDraft,
+  removeDraft,
   open,
   drop,
   recent,
@@ -56,6 +60,9 @@ export function Home({
   favorites,
   toggleFavorite,
 }: {
+  drafts: DraftInfo[];
+  resumeDraft: (id: string) => void;
+  removeDraft: (id: string) => void;
   open: () => void;
   drop: (f: File[]) => void;
   recent: Recent[];
@@ -73,6 +80,49 @@ export function Home({
         description={t('Tout ce dont vous avez besoin. Rien de superflu.')}
         action={<PrivacyBadge />}
       />
+      {drafts.length > 0 && (
+        <section className="draft-recovery" aria-label={t('Brouillons à reprendre')}>
+          <div>
+            <span className="eyebrow">{t('REPRENDRE MON TRAVAIL')}</span>
+            <h2>{t('Vos brouillons sont ici')}</h2>
+            <p>
+              {t(
+                'Sauvegardés sur cet appareil · 5 brouillons et 250 Mio maximum · 20 actions d’historique maximum.',
+              )}
+            </p>
+          </div>
+          <div className="draft-list">
+            {drafts.map((draft) => (
+              <article key={draft.id} className="draft-card">
+                <FileText size={24} />
+                <div>
+                  <strong>{draft.name}</strong>
+                  <small>
+                    {t('{pages} page(s) · {size}', {
+                      pages: draft.pages,
+                      size: fileSize(draft.size),
+                    })}{' '}
+                    · {new Date(draft.updated).toLocaleString(getLocale())}
+                  </small>
+                </div>
+                <Button
+                  className="primary"
+                  onClick={() => resumeDraft(draft.id)}
+                  aria-label={t('Reprendre {name}', { name: draft.name })}
+                >
+                  {t('Reprendre')}
+                </Button>
+                <IconButton
+                  label={t('Supprimer le brouillon {name}', { name: draft.name })}
+                  onClick={() => removeDraft(draft.id)}
+                >
+                  <Trash2 size={17} />
+                </IconButton>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
       <section
         className="hero"
         onDragOver={(e) => {

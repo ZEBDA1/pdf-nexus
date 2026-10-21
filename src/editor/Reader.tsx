@@ -1,9 +1,14 @@
+import { ReplaceDialog } from './ReplaceDialog';
+import { occurrences } from '../pdf/search';
+import { ObjectsPanel } from './ObjectsPanel';
+import { replacementFonts, replacementFontForText } from '../pdf/text-style';
 import { usePdfZoom } from './usePdfZoom';
 import { AllTextEditor } from './AllTextEditor';
 import { SignatureDialog } from './SignatureDialog';
 import { t } from '../i18n';
 import type { NativeEdit } from '../types';
 import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import {
   ChevronLeft,
@@ -38,9 +43,18 @@ import {
 } from 'lucide-react';
 import { Button, IconButton } from '../components/ui';
 import { PdfPage } from './PdfPage';
-import type { Workspace, Tool, Annotation, PageText } from '../types';
+import type { Workspace, Tool, Annotation, PageText, FormValue } from '../types';
 import { readFile, safeUrl, errorMessage } from '../utils/files';
 export function Reader({
+  replaceNative,
+  selectedIds,
+  patchObjects,
+  orderObject,
+  copyObjects,
+  pasteObjects,
+  canPaste,
+  updateForm,
+  saveStatus,
   workspace,
   updateNative,
   updateVisual,
@@ -83,6 +97,15 @@ export function Reader({
   getText,
   notify,
 }: {
+  replaceNative: (changes: { pageId: string; edit: NativeEdit }[]) => void;
+  selectedIds: string[];
+  patchObjects: (ids: string[], changes: Partial<Annotation>, group?: string) => void;
+  orderObject: (id: string, direction: number) => void;
+  copyObjects: () => void;
+  pasteObjects: () => void;
+  canPaste: boolean;
+  updateForm: (pageId: string, name: string, value: FormValue, group: string) => void;
+  saveStatus?: ReactNode;
   workspace: Workspace;
   updateNative: (pageId: string, edits: NativeEdit[], group: string) => void;
   updateVisual: (pageId: string, annotation: Annotation, group: string) => void;
@@ -104,7 +127,7 @@ export function Reader({
   image?: { bytes: Uint8Array; type: 'png' | 'jpg'; aspect?: number };
   setImage: (i: { bytes: Uint8Array; type: 'png' | 'jpg'; aspect?: number }) => void;
   selected?: string;
-  setSelected: (id: string) => void;
+  setSelected: (id: string, multiple?: boolean) => void;
   add: (pageId: string, a: Annotation) => void;
   update: (pageId: string, a: Annotation, group?: string) => void;
   remove: () => void;
@@ -129,8 +152,33 @@ export function Reader({
   const [sidebar, setSidebar] = useState(true),
     [search, setSearch] = useState(''),
     [results, setResults] = useState<PageText[]>([]),
+    [searchQuery, setSearchQuery] = useState(''),
+    [hit, setHit] = useState(0),
+    [didSearch, setDidSearch] = useState(false),
+    [replaceOpen, setReplaceOpen] = useState(false),
     [searching, setSearching] = useState(false),
     [drag, setDrag] = useState<number>();
+  const [objects, setObjects] = useState(false);
+  const searchControl = useRef<AbortController | undefined>(undefined);
+  useEffect(() => () => searchControl.current?.abort(), []);
+  const hits = results.flatMap((p) =>
+    occurrences(p.items.map((i) => i.text).join(' '), searchQuery).map((_, index) => ({
+      page: p.page,
+      index,
+    })),
+  );
+  function stepHit(next: number) {
+    const index = (next + hits.length) % hits.length;
+    setHit(index);
+    if (hits[index]) go(hits[index].page - 1);
+  }
+  useEffect(() => {
+    searchControl.current?.abort();
+    setResults([]);
+    setSearchQuery('');
+    setDidSearch(false);
+    setSearching(false);
+  }, [workspace.pages]);
   const [native, setNative] = useState(true);
   const [hand, setHand] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
@@ -175,100 +223,138 @@ export function Reader({
   const selectedPage = workspace.pages.find((p) => p.annotations.some((a) => a.id === selected));
   const selectedAnnotation = selectedPage?.annotations.find((a) => a.id === selected);
   const inspectorGroup = useRef('');
-  const inspector = selectedAnnotation && tool === 'select' && (
-    <div className="annotation-inspector">
-      <span>{t('Annotation sélectionnée')}</span>
-      {selectedAnnotation.text !== undefined && (
-        <input
-          aria-label={t('Modifier le texte sélectionné')}
-          value={selectedAnnotation.text}
-          onFocus={() => {
-            inspectorGroup.current = crypto.randomUUID();
-          }}
-          onChange={(e) =>
-            update(
-              selectedPage!.id,
-              { ...selectedAnnotation, text: e.target.value },
-              inspectorGroup.current,
-            )
-          }
-        />
-      )}
-      <label>
-        {t('Largeur')}{' '}
-        <input
-          aria-label={t('Largeur de l’annotation')}
-          type="number"
-          min={5}
-          max={1500}
-          value={Math.round(selectedAnnotation.width)}
-          onFocus={() => {
-            inspectorGroup.current = crypto.randomUUID();
-          }}
-          onChange={(e) =>
-            update(
-              selectedPage!.id,
-              {
-                ...selectedAnnotation,
-                width: Math.max(5, Number(e.target.value)),
-              },
-              inspectorGroup.current,
-            )
-          }
-        />
-      </label>
-      <label>
-        {t('Hauteur')}{' '}
-        <input
-          aria-label={t('Hauteur de l’annotation')}
-          type="number"
-          min={5}
-          max={1500}
-          value={Math.round(selectedAnnotation.height)}
-          onFocus={() => {
-            inspectorGroup.current = crypto.randomUUID();
-          }}
-          onChange={(e) =>
-            update(
-              selectedPage!.id,
-              {
-                ...selectedAnnotation,
-                height: Math.max(5, Number(e.target.value)),
-              },
-              inspectorGroup.current,
-            )
-          }
-        />
-      </label>
-      {selectedAnnotation.type !== 'image' && (
-        <>
+  const inspector = selectedAnnotation &&
+    !selectedAnnotation.locked &&
+    tool === 'select' &&
+    selectedIds.length === 1 && (
+      <div className="annotation-inspector">
+        <span>{t('Annotation sélectionnée')}</span>
+        {selectedAnnotation.type === 'checkbox' && (
           <label>
-            {t('Couleur')}
             <input
-              type="color"
-              aria-label={t('Couleur de l’annotation')}
-              value={selectedAnnotation.color}
-              onChange={(e) => setColor(e.target.value)}
+              type="checkbox"
+              checked={selectedAnnotation.checked ?? false}
+              onChange={(e) =>
+                update(selectedPage!.id, { ...selectedAnnotation, checked: e.target.checked })
+              }
             />
+            {t('Case cochée')}
           </label>
+        )}
+        {selectedAnnotation.text !== undefined && (
+          <textarea
+            rows={2}
+            aria-label={t('Modifier le texte sélectionné')}
+            value={selectedAnnotation.text}
+            onFocus={() => {
+              inspectorGroup.current = crypto.randomUUID();
+            }}
+            onChange={(e) =>
+              update(
+                selectedPage!.id,
+                { ...selectedAnnotation, text: e.target.value },
+                inspectorGroup.current,
+              )
+            }
+          />
+        )}
+        <label>
+          {t('Largeur')}{' '}
+          <input
+            aria-label={t('Largeur de l’annotation')}
+            type="number"
+            min={5}
+            max={1500}
+            value={Math.round(selectedAnnotation.width)}
+            onFocus={() => {
+              inspectorGroup.current = crypto.randomUUID();
+            }}
+            onChange={(e) =>
+              update(
+                selectedPage!.id,
+                {
+                  ...selectedAnnotation,
+                  width: Math.max(5, Number(e.target.value)),
+                },
+                inspectorGroup.current,
+              )
+            }
+          />
+        </label>
+        <label>
+          {t('Hauteur')}{' '}
+          <input
+            aria-label={t('Hauteur de l’annotation')}
+            type="number"
+            min={5}
+            max={1500}
+            value={Math.round(selectedAnnotation.height)}
+            onFocus={() => {
+              inspectorGroup.current = crypto.randomUUID();
+            }}
+            onChange={(e) =>
+              update(
+                selectedPage!.id,
+                {
+                  ...selectedAnnotation,
+                  height: Math.max(5, Number(e.target.value)),
+                },
+                inspectorGroup.current,
+              )
+            }
+          />
+        </label>
+        {selectedAnnotation.text !== undefined && (
           <label>
-            {t('Taille')}
-            <input
-              type="number"
-              min={4}
-              max={150}
-              aria-label={t('Taille de l’annotation')}
-              value={selectedAnnotation.size}
-              onChange={(e) => setSize(Math.max(4, Math.min(150, Number(e.target.value))))}
-            />
+            {t('Police')}
+            <select
+              aria-label={t('Police de l’objet')}
+              value={selectedAnnotation.replacement?.font ?? selectedAnnotation.font ?? 'Noto Sans'}
+              onChange={(e) => {
+                const font = replacementFontForText(e.target.value, selectedAnnotation.text ?? '');
+                patchObjects(
+                  [selectedAnnotation.id],
+                  selectedAnnotation.replacement
+                    ? { replacement: { ...selectedAnnotation.replacement, font } }
+                    : { font },
+                );
+              }}
+            >
+              {replacementFonts.map((font) => (
+                <option key={font}>{font}</option>
+              ))}
+            </select>
           </label>
-        </>
-      )}
-      <IconButton label={t('Supprimer l’annotation sélectionnée')} onClick={remove}>
-        <Trash2 size={17} />
-      </IconButton>
-    </div>
-  );
+        )}
+        {selectedAnnotation.type !== 'image' && (
+          <>
+            <label>
+              {t('Couleur')}
+              <input
+                type="color"
+                aria-label={t('Couleur de l’annotation')}
+                value={selectedAnnotation.color}
+                onChange={(e) => setColor(e.target.value)}
+              />
+            </label>
+            <label>
+              {t('Taille')}
+              <input
+                type="number"
+                min={4}
+                max={150}
+                aria-label={t('Taille de l’annotation')}
+                value={selectedAnnotation.size}
+                onChange={(e) => setSize(Math.max(4, Math.min(150, Number(e.target.value))))}
+              />
+            </label>
+          </>
+        )}
+        <IconButton label={t('Supprimer l’annotation sélectionnée')} onClick={remove}>
+          <Trash2 size={17} />
+        </IconButton>
+      </div>
+    );
   function go(n: number) {
     const clamped = Math.max(0, Math.min(workspace.pages.length - 1, n));
     setCurrent(clamped);
@@ -277,18 +363,26 @@ export function Reader({
       ?.scrollIntoView({ behavior: 'instant', block: 'start' });
   }
   async function find() {
+    searchControl.current?.abort();
+    const control = new AbortController();
+    searchControl.current = control;
     setSearching(true);
+    setDidSearch(false);
     try {
-      const pages = await getText(new AbortController().signal);
-      setResults(
-        pages.filter((p) =>
-          p.text.toLocaleLowerCase('fr').includes(search.toLocaleLowerCase('fr')),
-        ),
+      const pages = await getText(control.signal);
+      if (control.signal.aborted) return;
+      const matched = pages.filter(
+        (p) => occurrences(p.items.map((i) => i.text).join(' '), search).length,
       );
+      setSearchQuery(search);
+      setResults(matched);
+      setHit(0);
+      setDidSearch(true);
+      if (matched.length) go(matched[0].page - 1);
     } catch (e) {
-      notify(errorMessage(e), true);
+      if (!control.signal.aborted) notify(errorMessage(e), true);
     } finally {
-      setSearching(false);
+      if (searchControl.current === control) setSearching(false);
     }
   }
   async function chooseImage(file: File) {
@@ -321,7 +415,7 @@ export function Reader({
               {workspace.pages.length} {t('pages ·')}{' '}
               {workspace.encrypted
                 ? t('Lecture seule — PDF chiffré')
-                : t('Brouillon local · exportez pour enregistrer')}
+                : (saveStatus ?? t('Brouillon local · exportez pour enregistrer'))}
             </small>
           </span>
         </div>
@@ -456,7 +550,9 @@ export function Reader({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <button disabled={searching || !search.trim()}>{searching ? '…' : '↵'}</button>
+          <button aria-label={t('Lancer la recherche')} disabled={searching || !search.trim()}>
+            {searching ? '…' : '↵'}
+          </button>
         </form>
       </div>
       <div className="annotation-toolbar">
@@ -608,6 +704,18 @@ export function Reader({
             </Button>
           </div>
         </details>
+        <Button
+          aria-pressed={objects}
+          onClick={() => {
+            setObjects(!objects);
+            setAllText(false);
+            setNative(false);
+            setHand(false);
+            setTool('select');
+          }}
+        >
+          {t('Objets ajoutés')}
+        </Button>
         <div className="row toolbar-history">
           <IconButton label={t('Annuler (Ctrl+Z)')} disabled={!canUndo} onClick={undo}>
             <Undo2 size={17} />
@@ -721,13 +829,24 @@ export function Reader({
           >
             {t('Modifier tout le texte')}
           </button>
+          <Button onClick={() => setReplaceOpen(true)} disabled={workspace.encrypted}>
+            {t('Rechercher et remplacer')}
+          </Button>
         </div>
+      )}
+      {replaceOpen && (
+        <ReplaceDialog
+          workspace={workspace}
+          getText={getText}
+          apply={replaceNative}
+          close={() => setReplaceOpen(false)}
+        />
       )}
       {inspector}
       {detectBoxes && (
         <div className="editing-hint">
           {t(
-            'Cases imprimées : cliquez sur un carré repéré pour le cocher. La détection est indicative ; vous pouvez aussi ajouter une case depuis Annoter.',
+            'Cases imprimées : cliquez pour cocher. Clic droit ou Suppr masque un faux repère ; relancez le repérage pour le retrouver.',
           )}
         </div>
       )}
@@ -855,33 +974,47 @@ export function Reader({
             pan.current = undefined;
           }}
         >
-          {results.length > 0 && (
-            <div className="search-results">
+          {didSearch && (
+            <div className="search-results" role="status">
               <strong>
-                {t('{count} page(s) contenant « {query} »', {
-                  count: results.length,
-                  query: search,
-                })}
+                {hits.length
+                  ? t('Occurrence {current} sur {count}', { current: hit + 1, count: hits.length })
+                  : t('Aucune occurrence trouvée')}
               </strong>
-              {results.map((r) => (
-                <button key={r.page} onClick={() => go(r.page - 1)}>
-                  {t('p.')}
-                  {r.page}
-                </button>
-              ))}
-              <IconButton label={t('Fermer les résultats')} onClick={() => setResults([])}>
+              <IconButton
+                label={t('Occurrence précédente')}
+                disabled={!hits.length}
+                onClick={() => stepHit(hit - 1)}
+              >
+                <ChevronLeft size={15} />
+              </IconButton>
+              <IconButton
+                label={t('Occurrence suivante')}
+                disabled={!hits.length}
+                onClick={() => stepHit(hit + 1)}
+              >
+                <ChevronRight size={15} />
+              </IconButton>
+              <IconButton
+                label={t('Fermer les résultats')}
+                onClick={() => {
+                  searchControl.current?.abort();
+                  setResults([]);
+                  setSearchQuery('');
+                  setDidSearch(false);
+                }}
+              >
                 <X size={15} />
               </IconButton>
             </div>
           )}
-          {!results.length && search && !searching && (
-            <small className="search-tip">
-              {t('Recherche dans le texte natif et OCR ; lancez avec Entrée.')}
-            </small>
-          )}
           {workspace.pages.map((ref, i) => (
             <div className="page-frame" key={ref.id}>
               <PdfPage
+                searchQuery={searchQuery}
+                searchItems={results.find((p) => p.page === i + 1)?.items}
+                activeOccurrence={hits[hit]?.page === i + 1 ? hits[hit].index : -1}
+                onFormChange={(name, value, group) => updateForm(ref.id, name, value, group)}
                 doc={docs[ref.source]}
                 reference={ref}
                 source={workspace.sources[ref.source]}
@@ -899,6 +1032,7 @@ export function Reader({
                 link={link}
                 image={image}
                 selected={selected}
+                selectedIds={selectedIds}
                 onSelect={setSelected}
                 onAdd={(a) => {
                   try {
@@ -912,7 +1046,7 @@ export function Reader({
                     notify(errorMessage(e), true);
                   }
                 }}
-                onUpdate={(a) => update(ref.id, a)}
+                onUpdate={(a, group) => update(ref.id, a, group)}
                 onError={(s) => notify(s, true)}
                 watermark={workspace.watermark}
                 watermarkOptions={workspace.watermarkOptions}
@@ -925,6 +1059,26 @@ export function Reader({
             </div>
           ))}
         </div>
+        {objects && (
+          <ObjectsPanel
+            workspace={workspace}
+            selected={selectedIds}
+            select={(id, multiple) => {
+              setNative(false);
+              setHand(false);
+              setSelected(id, multiple);
+              const page = workspace.pages.findIndex((p) => p.annotations.some((a) => a.id === id));
+              if (page >= 0) go(page);
+            }}
+            patch={patchObjects}
+            order={orderObject}
+            remove={remove}
+            copy={copyObjects}
+            paste={pasteObjects}
+            canPaste={canPaste}
+            close={() => setObjects(false)}
+          />
+        )}
         {allText && (
           <AllTextEditor
             workspace={workspace}

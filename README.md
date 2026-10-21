@@ -7,7 +7,7 @@
 **L'atelier PDF tout-en-un, ultra-rapide et 100% privé pour votre navigateur.**  
 _Éditez, organisez, convertissez, signez et analysez vos PDF directement dans Google Chrome & Microsoft Edge — sans aucun serveur externe._
 
-[![Version](https://img.shields.io/badge/version-1.6.7-emerald.svg?style=for-the-badge&logo=semver&logoColor=white)](docs/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.7.0-emerald.svg?style=for-the-badge&logo=semver&logoColor=white)](docs/CHANGELOG.md)
 [![Manifest V3](https://img.shields.io/badge/Chrome_Extension-Manifest_V3-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](public/manifest.json)
 [![100% Local](https://img.shields.io/badge/Privacy-100%25_Client--Side-10b981?style=for-the-badge&logo=shield&logoColor=white)](docs/PRIVACY.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
@@ -31,21 +31,25 @@ _Éditez, organisez, convertissez, signez et analysez vos PDF directement dans G
 
 > [!IMPORTANT]
 > **Pourquoi confier vos documents confidentiels à des convertisseurs en ligne ?**  
-> Contrairement aux services cloud tiers (iLovePDF, Smallpdf, etc.), **PDF Nexus exécute 100% de ses opérations directement sur votre machine**. Aucune page, aucun mot et aucun fichier n'est téléversé sur un serveur distant. Vos documents restent strictement les vôtres.
+> Contrairement aux services cloud tiers (iLovePDF, Smallpdf, etc.), **PDF Nexus traite vos documents sur votre machine par défaut**. Seul un mode IA distant configuré et confirmé explicitement envoie des extraits au fournisseur choisi. Vos documents restent strictement les vôtres.
 
 <br />
 
+## Mise à jour locale 1.7.0
+
+Brouillons récupérables, formulaires interactifs, panneau des objets ajoutés, export au choix avec aperçu, recherche par occurrence et remplacement global prévisualisé. Les textes ajoutés ont des polices réglables, plusieurs lignes, des poignées et des guides d’alignement. Voir [la réalisation des cinq priorités](docs/IMPLEMENTATION-ROADMAP.md) et [les résultats de validation](docs/VALIDATION.md).
+
 ## ✨ En un coup d'œil
 
-| 🎯 Fonctionnalité             | 🛠️ Ce que fait PDF Nexus                                                                                          | 🔒 Confidentialité     |
-| :---------------------------- | :---------------------------------------------------------------------------------------------------------------- | :--------------------- |
-| **Lecteur & Annotation**      | Moteur PDF.js 6.4 accéléré, zoom fluide, surlignage, formes, notes, tampons, liens                                | 100% Hors-ligne        |
-| **Modification In-Situ**      | Modifiez directement le texte d'un PDF existant avec conservation des polices et correction visuelle intelligente | Traitement local       |
-| **Remplir & Signer**          | Signatures manuscrites/tapées, détection auto des cases à cocher imprimées, aplatissement sécurisé                | En mémoire             |
-| **Gestion des Pages**         | Réorganisation drag & drop, fusion, rotation 90°, suppression, duplication, division de documents                 | Local (pdf-lib)        |
-| **Conversions Multi-formats** | Convertissez vers Word (DOCX), Excel (XLSX), images (PNG/JPG), TXT, ou regroupez en ZIP                           | Web Workers dédiés     |
-| **OCR Embarqué**              | Moteur Tesseract.js (Français & Anglais) pour numériser des scans et générer des PDF recherchables                | Modèle WASM local      |
-| **Assistant IA Documentaire** | Extraits et recherche sémantique sans modèle, support natif de la Prompt API Chrome ou BYOK (OpenAI/Ollama)       | Choix de l'utilisateur |
+| 🎯 Fonctionnalité             | 🛠️ Ce que fait PDF Nexus                                                                                            | 🔒 Confidentialité     |
+| :---------------------------- | :------------------------------------------------------------------------------------------------------------------ | :--------------------- |
+| **Lecteur & Annotation**      | Moteur PDF.js 6.4 accéléré, zoom fluide, surlignage, formes, notes, tampons, liens                                  | 100% Hors-ligne        |
+| **Modification In-Situ**      | Modifiez directement le texte d'un PDF existant avec conservation des polices et correction visuelle intelligente   | Traitement local       |
+| **Remplir & Signer**          | Signatures visuelles, cases imprimées ou de formulaire, réédition des ajouts après export et réouverture dans Nexus | Local                  |
+| **Gestion des Pages**         | Réorganisation drag & drop, fusion, rotation 90°, suppression, duplication, division de documents                   | Local (pdf-lib)        |
+| **Conversions Multi-formats** | Convertissez vers Word (DOCX), Excel (XLSX), images (PNG/JPG), TXT, ou regroupez en ZIP                             | Web Workers dédiés     |
+| **OCR Embarqué**              | Moteur Tesseract.js (Français & Anglais) pour numériser des scans et générer des PDF recherchables                  | Modèle WASM local      |
+| **Assistant IA Documentaire** | Extraits et recherche sémantique sans modèle, support natif de la Prompt API Chrome ou BYOK (OpenAI/Ollama)         | Choix de l'utilisateur |
 
 <br />
 
@@ -55,7 +59,7 @@ _Éditez, organisez, convertissez, signez et analysez vos PDF directement dans G
 
 ### 📝 1. Édition de Texte Réelle & Précise
 
-- **Modification directe sur la page** : Cliquez sur n'importe quel bloc de texte d'un PDF natif pour le corriger ou le remplacer instantanément.
+- **Modification directe sur la page** : Cliquez sur un bloc de texte exploitable d’un PDF natif pour le corriger ou le remplacer instantanément.
 - **Préservation typographique** : Conservation automatique de la police d'origine, de la graisse, de la couleur et des coordonnées matricielles. Repli automatique vers Noto Sans pour les caractères rares.
 - **Masquage de correction visuelle** : Pour les documents scannés ou les polices vectorisées complexes, un masque de correction contextuel s'applique sans déformer le document.
 
@@ -63,7 +67,8 @@ _Éditez, organisez, convertissez, signez et analysez vos PDF directement dans G
 
 - **Signature personnalisée** : Dessinez à la souris/stylet ou générez votre signature typographique directement sur votre appareil.
 - **Détection des cases imprimées** : Détecte les carrés de formulaires papier scannés pour vous permettre de les cocher d'un simple clic.
-- **Aplatissement à l'export** : Fige proprement signatures et champs pour un rendu net et universellement compatible.
+- **Vrais champs** : Texte, plusieurs lignes, cases, radios et listes ; navigation par Tab.
+- **Export au choix** : Conservez les champs interactifs dans une copie Nexus ou figez les ajouts et champs dans une copie de partage, après aperçu.
 
 ### 🗂️ 3. Espace d'Organisation & Fusion Multi-fichiers
 
@@ -85,7 +90,7 @@ _Éditez, organisez, convertissez, signez et analysez vos PDF directement dans G
 ### 🤖 6. Assistant Documentaire Privé
 
 - **Recherche & Extraits gratuits** : Analyse locale sans connexion réseau pour répondre à vos questions et retrouver les passages clés.
-- **IA locale ou personnelle (BYOK)** : Compatible avec la Prompt API native de Chrome (Gemini Nano) ou connectable à votre propre endpoint d'API compatible OpenAI (ex. Ollama local, Groq, LM Studio). Vos clés d'API restent chiffrées en mémoire locale de session.
+- **IA locale ou personnelle (BYOK)** : Compatible avec la Prompt API native de Chrome (Gemini Nano) ou connectable à votre propre endpoint d'API compatible OpenAI (ex. Ollama local, Groq, LM Studio). Les clés sont conservées dans le stockage de session réservé aux pages de confiance, sans chiffrement propre à Nexus. Les appels distants nécessitent votre confirmation et peuvent être facturés par le fournisseur.
 
 <br />
 

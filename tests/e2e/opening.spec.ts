@@ -156,6 +156,7 @@ for (const channel of ['chromium', 'msedge', 'chrome'] as const) {
         );
         const exported = downloaded.waitForEvent('download');
         await downloaded.getByRole('button', { name: 'Exporter le PDF', exact: true }).click();
+        await downloaded.getByRole('button', { name: 'Télécharger le PDF', exact: true }).click();
         await (await exported).path();
         await expect
           .poll(() =>

@@ -1,19 +1,47 @@
-import type { Request } from './client';
+import type { Request, AuxiliaryRequest } from './client';
 import { exportWorkspace, textToPdf, imagesToPdf, rasterToPdf } from '../pdf/operations';
 import { convertText } from '../converters/text';
 import { safeName, errorMessage } from '../utils/files';
 import type { OutputFile } from '../types';
 import { setLanguage } from '../i18n';
-self.onmessage = async ({ data: request }: { data: Request & { language: 'fr' | 'en' } }) => {
+import { restoreEditableSource } from '../pdf/editable';
+import { previewReplacement } from '../pdf/replace';
+self.onmessage = async ({
+  data: request,
+}: {
+  data: (Request | Exclude<AuxiliaryRequest, { kind: 'boxes' }>) & { language: 'fr' | 'en' };
+}) => {
   setLanguage(request.language === 'en' ? 'en' : 'fr');
   try {
+    if (request.kind === 'replace') {
+      const result = await previewReplacement(
+        request.source.bytes,
+        request.index,
+        request.existing,
+        request.query,
+        request.replacement,
+        request.font,
+      );
+      self.postMessage({ result });
+      return;
+    }
+    if (request.kind === 'restore') {
+      const result = await restoreEditableSource(request.source);
+      self.postMessage({ result });
+      return;
+    }
     let files: OutputFile[];
     if (request.kind === 'export')
       files = [
         {
-          name: safeName(request.workspace.name) + '-nexus.pdf',
-          bytes: await exportWorkspace(request.workspace, request.font, (n) =>
-            self.postMessage({ progress: n }),
+          name:
+            safeName(request.workspace.name) +
+            (request.options?.mode === 'flattened' ? '-partage.pdf' : '-nexus.pdf'),
+          bytes: await exportWorkspace(
+            request.workspace,
+            request.font,
+            (n) => self.postMessage({ progress: n }),
+            request.options,
           ),
           mime: 'application/pdf',
         },

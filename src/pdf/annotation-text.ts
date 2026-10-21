@@ -1,8 +1,15 @@
+import { cssFont, replacementFontForText } from './text-style';
 let context: CanvasRenderingContext2D | null | undefined;
-export function previewLines(text: string, size: number, width: number): string[] {
+export function previewLines(
+  text: string,
+  size: number,
+  width: number,
+  font = 'Noto Sans',
+): string[] {
   context ??= document.createElement('canvas').getContext('2d');
   if (!context) return text.split('\n');
-  context.font = `${size}px "Noto Sans"`;
+  const css = cssFont(replacementFontForText(font, text));
+  context.font = `${css.fontStyle} ${css.fontWeight} ${size}px ${css.fontFamily}`;
   const lines: string[] = [];
   for (const paragraph of text.split('\n')) {
     let line = '';
