@@ -1,5 +1,13 @@
 # Architecture PDF Nexus
 
+## Version locale 1.7.1
+
+Le build Vite conserve les bundles applicatifs et le Worker de traitement lisibles (`minify: false`). Le plugin `readable-vendors-for-chrome` applique au module `Object.create` amont de PDF.js une substitution déterministe, protégée par son empreinte SHA-256 : Chrome et Edge 131+ possèdent nativement cette API, donc les anciens replis ActiveX, iframe et écriture de scripts n’ont plus d’usage. Le Worker PDF non minifié est packagé sous `vendor/pdfjs/pdf.worker.mjs` avec la même transformation et la même version que l’API. Un Worker Canvas PDF.js est testé dans les navigateurs compilés.
+
+ExcelJS est résolu vers son bundle navigateur amont `dist/exceljs.bare.js`, qui conserve l’export XLSX et omet les polyfills historiques. `scripts/audit-remote-code.mjs` inspecte `dist/` et `scripts/audit-store-package.mjs` inspecte le ZIP final ; les deux partagent les contrôles centralisés dans `scripts/vendor-policy.mjs`. Les tests de régression vérifient aussi le code amont contre l’extrait du refus.
+
+Les versions et transformations des dépendances embarquées sont décrites dans `vendor/BUILD-NOTES.txt` dans le paquet et dans l’archive source. Le build bloque si le module ciblé PDF.js est modifié lors d’une mise à jour de dépendance, jusqu’à sa revue explicite.
+
 ## Version locale 1.7.0
 
 `storage/drafts.ts` utilise les magasins IndexedDB v3 `drafts` (index léger), `draftStates` (snapshot/historique/navigation), `draftSources` (octets par révision). Une file sérialise les mutations ; une époque invalide les sauvegardes en attente lors d’un effacement. Quotas : 5 brouillons, 250 Mio, 20 actions/20 Mio par historique. Les snapshots sont explicitement clonés sans sources ni propriétés étrangères. `useAutosave` différère l’écriture de 300 ms et déclenche aussi une tentative lors du masquage de l’onglet. Le statut ne devient enregistré qu’après validation de la transaction.

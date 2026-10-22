@@ -1,5 +1,6 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
+import { auditExecutable } from './vendor-policy.mjs';
 
 const root = resolve('dist');
 const executable = [];
@@ -12,26 +13,16 @@ async function walk(directory) {
 }
 await walk(root);
 
-const banned = [
-  /cdn\.jsdelivr\.net/i,
-  /unpkg\.com/i,
-  /cdnjs\.cloudflare\.com/i,
-  /workerBlobURL/i,
-  /new\s+Blob\s*\(\s*\[[^\]]*importScripts/is,
-  /importScripts\s*\(\s*["'`]https?:/i,
-  /\.importScripts\s*\(\s*[a-z_$][\w$]*\s*\)/i,
-  /new\s+Worker\s*\(\s*["'`]https?:/i,
-];
 const failures = [];
 for (const path of executable) {
   const source = await readFile(path, 'utf8');
-  for (const pattern of banned)
-    if (pattern.test(source)) failures.push(`${relative(root, path)} : ${pattern}`);
+  failures.push(...auditExecutable(relative(root, path), source));
 }
-if (failures.length)
-  throw new Error(`Code distant détecté dans le paquet :\n${failures.join('\n')}`);
+if (failures.length) throw new Error(`Audit du code refusé :\n${failures.join('\n')}`);
 
 const worker = await readFile(join(root, 'vendor/ocr/worker.min.js'), 'utf8');
 if (!worker.includes('./local-core-v') || !worker.includes('./local-language-data/'))
   throw new Error('Le Worker OCR local verrouillé est absent du paquet.');
-console.log(`${executable.length} fichiers exécutables contrôlés : aucun code CDN distant.`);
+console.log(
+  `${executable.length} fichiers exécutables contrôlés : aucun code CDN ni repli IE signalé.`,
+);

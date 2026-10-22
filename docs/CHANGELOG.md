@@ -4,6 +4,14 @@ Ce document conserve l'historique complet des versions, correctifs et évolution
 
 ---
 
+## Correctif local 1.7.1 — lisibilité du paquet, Red Titanium
+
+- Retrait du module de repli `Object.create` de PDF.js cité par Google, dans le lecteur ET son Worker. Remplacement complet par la fonction native des navigateurs supportés ; aucune réécriture destinée à cacher des chaînes. Empreinte SHA-256 du module vérifiée avant modification, avec échec du build si la dépendance change.
+- ExcelJS utilise son bundle navigateur officiel `exceljs.bare.js`, sans les polyfills obsolètes du point d’entrée par défaut. La conversion XLSX est conservée.
+- Bundles applicatifs et Worker de traitement non minifiés ; Worker PDF issu du fichier amont non minifié. Compatibilité Chrome/Edge 131 conservée et permissions inchangées.
+- Audit partagé de `dist/` et du ZIP réellement produit, avec tests des deux extraits de refus et des régressions de chargement distant. Notes de construction et licences embarquées.
+- Aucune publication ni transmission au Store réalisée par ce correctif local. Les autres points de confidentialité documentés dans le guide de publication 1.7.0 restent distincts de ce refus.
+
 ## Mise à jour locale 1.7.0 — brouillons, formulaires, objets et export guidé
 
 - Sauvegarde des brouillons et de leur historique limité dans IndexedDB, reprise sur l’accueil, heure de sauvegarde, erreur/réessai, quotas et effacement. PDF chiffrés et secrets de connexion exclus.

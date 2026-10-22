@@ -7,7 +7,7 @@
 **L'atelier PDF tout-en-un, ultra-rapide et 100% privé pour votre navigateur.**  
 _Éditez, organisez, convertissez, signez et analysez vos PDF directement dans Google Chrome & Microsoft Edge — sans aucun serveur externe._
 
-[![Version](https://img.shields.io/badge/version-1.7.0-emerald.svg?style=for-the-badge&logo=semver&logoColor=white)](docs/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.7.1-emerald.svg?style=for-the-badge&logo=semver&logoColor=white)](docs/CHANGELOG.md)
 [![Manifest V3](https://img.shields.io/badge/Chrome_Extension-Manifest_V3-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](public/manifest.json)
 [![100% Local](https://img.shields.io/badge/Privacy-100%25_Client--Side-10b981?style=for-the-badge&logo=shield&logoColor=white)](docs/PRIVACY.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
@@ -34,6 +34,10 @@ _Éditez, organisez, convertissez, signez et analysez vos PDF directement dans G
 > Contrairement aux services cloud tiers (iLovePDF, Smallpdf, etc.), **PDF Nexus traite vos documents sur votre machine par défaut**. Seul un mode IA distant configuré et confirmé explicitement envoie des extraits au fournisseur choisi. Vos documents restent strictement les vôtres.
 
 <br />
+
+## Correctif local 1.7.1 — lisibilité du code distribué
+
+Le module de compatibilité `Object.create` de PDF.js est remplacé par l’implémentation native de Chrome et Edge ; ses anciens replis ActiveX, iframe et écriture de scripts sont retirés. ExcelJS utilise son bundle officiel sans polyfills. Les bundles Nexus et le Worker PDF sont livrés sans minification. Le build contrôle les scripts puis le ZIP final contre les régressions de code distant et les routines signalées. Voir [les instructions de nouvelle soumission](docs/STORE-RESUBMISSION-1.7.1.fr.md).
 
 ## Mise à jour locale 1.7.0
 

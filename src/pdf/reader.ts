@@ -3,12 +3,11 @@ import {
   GlobalWorkerOptions,
   type PDFDocumentProxy,
 } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import pdfWorker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import type { PageText, TextItem } from '../types';
 import { checkAbort } from '../utils/files';
-GlobalWorkerOptions.workerSrc = pdfWorker;
 export const assetUrl = (path: string) =>
   new URL(`${import.meta.env.BASE_URL}${path}`, location.href).href;
+GlobalWorkerOptions.workerSrc = assetUrl('vendor/pdfjs/pdf.worker.mjs');
 export async function loadPdf(
   bytes: Uint8Array,
   password?: string,

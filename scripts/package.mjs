@@ -15,6 +15,8 @@ for (const size of ['16', '32', '48', '128'])
   if (!files[manifest.icons[size]]) throw new Error(`Icône ${size} manquante.`);
 for (const path of [
   'vendor/ocr/worker.min.js',
+  'vendor/pdfjs/pdf.worker.mjs',
+  'vendor/BUILD-NOTES.txt',
   'vendor/ocr/fra.traineddata',
   'vendor/ocr/eng.traineddata',
   'fonts/NotoSans-Regular.ttf',

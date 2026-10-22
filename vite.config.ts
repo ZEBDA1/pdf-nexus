@@ -1,6 +1,19 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'node:path';
+import { pdfJsForChrome } from './scripts/vendor-policy.mjs';
+
+function readableVendors() {
+  return {
+    name: 'readable-vendors-for-chrome',
+    enforce: 'pre' as const,
+    transform(source: string, id: string) {
+      const path = id.replace(/\\/g, '/').split('?')[0];
+      if (path.endsWith('/pdfjs-dist/legacy/build/pdf.mjs'))
+        return { code: pdfJsForChrome(source), map: null };
+    },
+  };
+}
 
 function tesseractMv3() {
   return {
@@ -32,7 +45,14 @@ function tesseractMv3() {
 
 export default defineConfig({
   base: './',
-  plugins: [tesseractMv3(), react()],
+  plugins: [readableVendors(), tesseractMv3(), react()],
+  resolve: {
+    // The default browser entry includes old core-js polyfills. The official
+    // unminified bare bundle uses native browser APIs and retains XLSX support.
+    alias: [
+      { find: /^exceljs$/, replacement: resolve('node_modules/exceljs/dist/exceljs.bare.js') },
+    ],
+  },
   optimizeDeps: {
     include: [
       'pdf-lib',
@@ -48,6 +68,7 @@ export default defineConfig({
   },
   build: {
     target: 'chrome131',
+    minify: false,
     sourcemap: false,
     rollupOptions: {
       input: {

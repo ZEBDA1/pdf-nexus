@@ -1,13 +1,13 @@
 {
   "name": "pdf-nexus",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "author": "ZEBDA",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "assets": "node scripts/assets.mjs",
-    "build": "tsc --noEmit && vite build && node scripts/audit-remote-code.mjs && node scripts/package.mjs",
+    "build": "tsc --noEmit && vite build && node scripts/audit-remote-code.mjs && node scripts/package.mjs && node scripts/audit-store-package.mjs",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "check": "npm run i18n:check && npm run test && npm run build",

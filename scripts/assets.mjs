@@ -2,6 +2,7 @@ import { mkdir, cp, readFile, writeFile, access, readdir } from 'node:fs/promise
 import { createHash } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
 import { resolve, join } from 'node:path';
+import { pdfJsForChrome } from './vendor-policy.mjs';
 const root = resolve('public');
 await mkdir(join(root, 'vendor/ocr/core'), { recursive: true });
 await mkdir(join(root, 'fonts'), { recursive: true });
@@ -28,6 +29,39 @@ for (const name of await readdir('node_modules/tesseract.js-core'))
     await cp(`node_modules/tesseract.js-core/${name}`, join(root, 'vendor/ocr/core', name));
 for (const dir of ['cmaps', 'standard_fonts', 'wasm'])
   await cp(`node_modules/pdfjs-dist/${dir}`, join(root, 'vendor/pdfjs', dir), { recursive: true });
+const pdfWorker = pdfJsForChrome(
+  await readFile('node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs', 'utf8'),
+).replace(/^\/\/# sourceMappingURL=.*$/gm, '');
+await writeFile(join(root, 'vendor/pdfjs/pdf.worker.mjs'), pdfWorker);
+await writeFile(
+  join(root, 'vendor/BUILD-NOTES.txt'),
+  `PDF Nexus - packaged dependency build notes
+
+PDF.js 6.4.299 (Apache-2.0)
+Upstream: node_modules/pdfjs-dist/legacy/build/pdf.mjs and pdf.worker.mjs.
+These are the unminified compatibility builds. In BOTH files, the entire core-js
+internals/object-create.js module is replaced by module.exports = Object.create.
+Chrome / Edge 131+ provide native Object.create, including in Web Workers.
+The removed module contained obsolete ActiveX, hidden-iframe and script-writing
+fallbacks. No equivalent script construction or execution remains in its place.
+Other recent-API polyfills are retained to preserve Chrome 131 compatibility.
+The replacement is guarded by the upstream module's SHA-256, not a loose search.
+See scripts/vendor-policy.mjs in the source archive for the exact transformation.
+
+ExcelJS 4.4.0 (MIT)
+Uses upstream dist/exceljs.bare.js, the unminified browser bundle without core-js
+polyfills, instead of the default polyfilled dist/exceljs.min.js browser entry.
+The same alias applies to the editor and the document-processing Web Worker.
+
+Nexus application bundles and processing worker: Vite build.minify = false.
+No obfuscator, encrypted code, string-table encoding or remote executable loader
+is added by the build. Upstream library notices are included in licenses/.
+
+OCR: the upstream Tesseract worker and WASM libraries remain packaged locally.
+Its CDN fallbacks and dynamic core import are replaced with extension-local paths
+by scripts/assets.mjs. This local-only restriction is checked again in the ZIP.
+`,
+);
 const downloads = [
   [
     'vendor/ocr/eng.traineddata',

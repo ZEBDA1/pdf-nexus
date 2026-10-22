@@ -1,4 +1,15 @@
-# Validation locale — 20 octobre 2026
+# Validation locale — 22 octobre 2026
+
+## Correctif local 1.7.1 — lisibilité du paquet (Red Titanium)
+
+- `npm run check` : audit des traductions réussi (708 libellés), **72 tests unitaires réussis**, TypeScript et build de production réussis.
+- L’audit vérifie **25 scripts exécutables compilés**, puis décompresse et contrôle le ZIP Chrome Web Store réel : **494 fichiers**, `manifest.json` à la racine, aucune source, aucun chargeur de code CDN ou repli `ActiveX`/iframe cité par Google.
+- Les tests rejouent les deux extraits Red Titanium. Ils vérifient le remplacement contrôlé par SHA-256 de `core-js/internals/object-create.js` dans le lecteur PDF.js et son Worker, puis le comportement de l’implémentation native pour les prototypes null/non null et les descripteurs. Ils vérifient aussi le refus du build si le module amont change.
+- Six scénarios navigateur passent : parcours du tableau de bord, édition/export, conversion de vrais formats, rendu PNG/JPEG, OCR sur un scan et document de 120 pages ; puis extension MV3 compilée, édition du texte PDF, export, réouverture et OCR hors connexion dans Chromium et Microsoft Edge.
+- La conversion ExcelJS reste active grâce au bundle navigateur amont sans polyfills. Les permissions du manifeste sont inchangées. Les dépendances OCR/WASM restent incluses localement.
+- Paquet d’installation : `release/pdf-nexus-1.7.1.zip`. Archive source séparée : `release/pdf-nexus-source-1.7.1.zip`. Instructions de nouvelle soumission dans [STORE-RESUBMISSION-1.7.1.fr.md](STORE-RESUBMISSION-1.7.1.fr.md). Aucun chargement au Store ni envoi GitHub.
+
+Google décide seul de l’issue de la nouvelle revue. Cette correction traite l’extrait `core-js` signalé ; l’examen des déclarations de confidentialité et des métadonnées du Store reste un contrôle distinct.
 
 ## Version locale 1.7.0
 
