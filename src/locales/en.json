@@ -404,6 +404,8 @@
   "Sélectionnez au moins une image.": "Select at least one image.",
   "Sélectionnez des fichiers.": "Select files.",
   "Structure — sans rasterisation": "Structure — without rasterization",
+  "Images — texte et liens conservés": "Images — text and links preserved",
+  "Images recompressées : {count}. Taille : {size} (avant : {before}).": "Images recompressed: {count}. Size: {size} (before: {before}).",
   "Supprimer l’annotation sélectionnée": "Delete selected annotation",
   "Supprimer la page courante": "Delete current page",
   "sur cette page — Ctrl+Z pour annuler.": "on this page — Ctrl+Z to undo.",
