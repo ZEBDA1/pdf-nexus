@@ -4,6 +4,10 @@ Ce document conserve l'historique complet des versions, correctifs et évolution
 
 ---
 
+## Non publié
+
+- Compression « Images » : recompression locale des images JPEG intégrées (texte, liens et formulaires conservés), suppression des métadonnées, jamais de fichier plus gros que l’original. Aucun code distant, aucune donnée envoyée (conforme aux politiques du Chrome Web Store).
+
 ## Correctif local 1.7.1 — lisibilité du paquet, Red Titanium
 
 - Retrait du module de repli `Object.create` de PDF.js cité par Google, dans le lecteur ET son Worker. Remplacement complet par la fonction native des navigateurs supportés ; aucune réécriture destinée à cacher des chaînes. Empreinte SHA-256 du module vérifiée avant modification, avec échec du build si la dépendance change.

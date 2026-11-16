@@ -78,6 +78,7 @@ import {
 } from '../utils/files';
 import { loadPdf, extractPage, renderRaster, canvasBytes } from '../pdf/reader';
 import { History } from '../pdf/history';
+import { compressPdfImages, browserImageEncoder } from '../pdf/compress';
 import { processJob, restoreSource, getFont, type RasterPage } from '../workers/client';
 import type { RestoredSource } from '../pdf/editable';
 import { recognize } from '../ocr';
@@ -951,6 +952,23 @@ export function App() {
           );
           return;
         }
+        if (!searchable && compression === 'images') {
+          const result = await compressPdfImages(
+            source.bytes,
+            { scale: 0.6, quality: 0.7, encode: browserImageEncoder },
+            signal,
+          );
+          progress(1);
+          download(result.bytes, safeName(source.name) + '-compresse.pdf');
+          notify(
+            t('Images recompressées : {count}. Taille : {size} (avant : {before}).', {
+              count: String(result.recompressed),
+              size: fileSize(result.bytes.length),
+              before: fileSize(source.bytes.length),
+            }),
+          );
+          return;
+        }
         const scale = searchable
           ? 2
           : compression === 'strong'
@@ -1196,6 +1214,7 @@ export function App() {
           onChange={(e) => setCompression(e.target.value)}
         >
           <option value="structure">{t('Structure — sans rasterisation')}</option>
+          <option value="images">{t('Images — texte et liens conservés')}</option>
           <option value="light">{t('JPEG détaillé — 144 dpi')}</option>
           <option value="balanced">{t('JPEG équilibré — 108 dpi')}</option>
           <option value="strong">{t('JPEG léger — 72 dpi')}</option>
