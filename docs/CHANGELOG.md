@@ -6,7 +6,9 @@ Ce document conserve l'historique complet des versions, correctifs et évolution
 
 ## Non publié
 
-- Compression « Images » : recompression locale des images JPEG intégrées (texte, liens et formulaires conservés), suppression des métadonnées, jamais de fichier plus gros que l’original. Aucun code distant, aucune donnée envoyée (conforme aux politiques du Chrome Web Store).
+- Compression locale des images : préréglages Léger / Équilibré / Fort / Personnalisé (curseurs résolution et qualité), taille cible avec ajustement automatique, aperçu avant/après avant téléchargement, compression par lot avec sortie ZIP.
+- Recompression des images JPEG RVB et Flate RVB/gris, plafonnement des très grandes images, suppression des vignettes, des objets orphelins et des métadonnées. Texte, liens et formulaires conservés ; jamais de fichier plus gros que l’original.
+- Tout est exécuté localement : aucun code distant, aucune donnée envoyée, aucune nouvelle permission.
 
 ## Correctif local 1.7.1 — lisibilité du paquet, Red Titanium
 
