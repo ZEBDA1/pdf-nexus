@@ -12,6 +12,9 @@ Ce document conserve l'historique complet des versions, correctifs et évolution
 - Fusion des flux binaires dupliqués avant l’enregistrement compressé.
 - Nouveaux outils locaux : édition des métadonnées, numérotation des pages, en-têtes, pieds de page et numérotation Bates, création et lecture des signets, extraction de toutes les images (JPEG tel quel, Flate en PNG) en ZIP.
 - Aucune permission ni dépendance ajoutée ; `npm run build` et les audits du paquet (code distant, ZIP) réussis.
+- Comparaison de deux PDF : mots ajoutés/supprimés par page et différence visuelle ; pages absentes signalées.
+- Les signets des pages conservées sont maintenus lors de la fusion et de la réorganisation.
+- Tests navigateur Playwright pour la compression et la compression par lot.
 
 ## Correctif local 1.7.1 — lisibilité du paquet, Red Titanium
 

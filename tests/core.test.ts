@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { Document, Paragraph, Packer } from 'docx';
 import { unzipSync, zipSync } from 'fflate';
 import ExcelJS from 'exceljs';
+import { writeOutline, readOutline } from '../src/pdf/tools';
 import { exportWorkspace, textToPdf, imagesToPdf, rasterToPdf } from '../src/pdf/operations';
 import { convertText } from '../src/converters/text';
 import { detectTable } from '../src/converters/tables';
@@ -148,6 +149,17 @@ describe('Traitements PDF réels', () => {
     const annots = out.getPage(0).node.lookup(PDFName.of('Annots'), PDFArray);
     expect(annots.size()).toBe(1);
     expect(out.getPageCount()).toBe(3);
+  });
+  it('conserve les signets des pages restantes à la fusion', async () => {
+    const w = await ws();
+    w.sources[0].bytes = await writeOutline(w.sources[0].bytes, [
+      { title: 'Un', page: 1 },
+      { title: 'Trois', page: 3 },
+    ]);
+    w.sources.push(await fixture());
+    w.pages = [{ ...w.pages[2] }, { ...w.pages[0], source: 1 }];
+    const out = await exportWorkspace(w, font);
+    expect(await readOutline(out)).toEqual([{ title: 'Trois', page: 1 }]);
   });
   it('retire réellement les champs Info/XMP du nouvel export', async () => {
     const w = await ws();
