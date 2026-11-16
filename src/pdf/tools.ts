@@ -133,7 +133,10 @@ export function formatOutline(items: OutlineItem[]) {
 }
 
 export async function readOutline(bytes: Uint8Array): Promise<OutlineItem[]> {
-  const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+  return outlineOf(await PDFDocument.load(bytes, { updateMetadata: false }));
+}
+
+export function outlineOf(doc: PDFDocument): OutlineItem[] {
   const pageRefs = doc.getPages().map((p) => p.ref);
   const first = doc.catalog.lookupMaybe(N('Outlines'), PDFDict)?.get(N('First'));
   const items: OutlineItem[] = [];
@@ -153,11 +156,16 @@ export async function readOutline(bytes: Uint8Array): Promise<OutlineItem[]> {
 
 export async function writeOutline(bytes: Uint8Array, items: OutlineItem[]): Promise<Uint8Array> {
   const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+  applyOutline(doc, items);
+  return doc.save();
+}
+
+export function applyOutline(doc: PDFDocument, items: OutlineItem[]) {
   const ctx = doc.context;
   const pages = doc.getPages();
   if (!items.length) {
     doc.catalog.delete(N('Outlines'));
-    return doc.save();
+    return;
   }
   const rootRef = ctx.nextRef();
   const refs = items.map(() => ctx.nextRef());
@@ -182,7 +190,6 @@ export async function writeOutline(bytes: Uint8Array, items: OutlineItem[]): Pro
     }),
   );
   doc.catalog.set(N('Outlines'), rootRef);
-  return doc.save();
 }
 
 /* ---------- Extraction des images (point 14) ---------- */
