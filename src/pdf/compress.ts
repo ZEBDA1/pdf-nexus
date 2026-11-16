@@ -104,6 +104,60 @@ export function removeOrphans(doc: PDFDocument): number {
   return removed;
 }
 
+function fnv(bytes: Uint8Array) {
+  let h = 0x811c9dc5;
+  for (const b of bytes) h = Math.imul(h ^ b, 0x01000193) >>> 0;
+  return h;
+}
+
+function sameBytes(a: Uint8Array, b: Uint8Array) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/**
+ * Fusionne les flux binaires identiques (même dictionnaire, mêmes octets) en
+ * redirigeant les références vers un seul exemplaire. Renvoie le nombre de doublons.
+ */
+export function mergeDuplicateStreams(doc: PDFDocument): number {
+  const ctx = doc.context;
+  const groups = new Map<string, [PDFRef, PDFRawStream][]>();
+  const canonical = new Map<PDFRef, PDFRef>();
+  for (const [ref, obj] of ctx.enumerateIndirectObjects()) {
+    if (!(ref instanceof PDFRef) || !(obj instanceof PDFRawStream)) continue;
+    const key = `${obj.contents.length}:${fnv(obj.contents)}:${obj.dict.toString()}`;
+    const group = groups.get(key) ?? [];
+    const first = group.find(([, o]) => sameBytes(o.contents, obj.contents));
+    if (first) canonical.set(ref, first[0]);
+    else group.push([ref, obj]);
+    groups.set(key, group);
+  }
+  if (!canonical.size) return 0;
+  const redirect = (v: PDFObject | undefined) =>
+    v instanceof PDFRef ? (canonical.get(v) ?? v) : v;
+  const fix = (obj: PDFObject) => {
+    if (obj instanceof PDFStream) return fix(obj.dict);
+    if (obj instanceof PDFDict) {
+      for (const [k, v] of obj.entries()) {
+        const r = redirect(v);
+        if (r !== v) obj.set(k, r as PDFObject);
+        else fix(v);
+      }
+    } else if (obj instanceof PDFArray) {
+      for (let i = 0; i < obj.size(); i++) {
+        const v = obj.get(i);
+        const r = redirect(v);
+        if (r !== v) obj.set(i, r as PDFObject);
+        else fix(v);
+      }
+    }
+  };
+  for (const [, obj] of ctx.enumerateIndirectObjects()) fix(obj);
+  if (ctx.trailerInfo.Root) fix(ctx.trailerInfo.Root);
+  return canonical.size;
+}
+
 /** Retire les vignettes de page (/Thumb), régénérables par les lecteurs. */
 export function removeThumbnails(doc: PDFDocument) {
   for (const page of doc.getPages()) page.node.delete(N('Thumb'));
@@ -189,6 +243,7 @@ export async function compressPdfImages(
     recompressed++;
   }
   removeThumbnails(doc);
+  mergeDuplicateStreams(doc);
   const removed = removeOrphans(doc);
   doc.setTitle('');
   doc.setAuthor('');

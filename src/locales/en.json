@@ -586,5 +586,21 @@
   "Qualité JPEG : {value} %": "JPEG quality: {value}%",
   "Résolution des images : {value} %": "Image resolution: {value}%",
   "Taille cible (Mio)": "Target size (MiB)",
-  "Taille cible en Mio": "Target size in MiB"
+  "Taille cible en Mio": "Target size in MiB",
+  "{count} image(s) extraite(s).": "{count} image(s) extracted.",
+  "Appliquer et télécharger": "Apply and download",
+  "Aucune image extractible dans ce document.": "No extractable image in this document.",
+  "En-tête": "Header",
+  "Extraire toutes les images (ZIP)": "Extract all images (ZIP)",
+  "Images du document": "Document images",
+  "Lire les métadonnées": "Read metadata",
+  "Lire les signets": "Read bookmarks",
+  "Numérotation, en-têtes et pieds de page": "Page numbering, headers and footers",
+  "Page de signet invalide.": "Invalid bookmark page.",
+  "Pied de page": "Footer",
+  "Préfixe Bates": "Bates prefix",
+  "Préfixe Bates (vide = désactivé)": "Bates prefix (empty = disabled)",
+  "Signets": "Bookmarks",
+  "Un signet par ligne : Titre | page": "One bookmark per line: Title | page",
+  "Variables : {n} page, {total} nombre de pages, {bates} numéro Bates.": "Variables: {n} page, {total} page count, {bates} Bates number."
 }

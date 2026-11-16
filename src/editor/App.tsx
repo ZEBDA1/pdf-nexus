@@ -77,6 +77,7 @@ import {
 import { loadPdf, extractPage, renderRaster, canvasBytes } from '../pdf/reader';
 import { History } from '../pdf/history';
 import { CompressPanel } from './CompressPanel';
+import { PdfToolsPanel } from './PdfToolsPanel';
 import { processJob, restoreSource, getFont, type RasterPage } from '../workers/client';
 import type { RestoredSource } from '../pdf/editable';
 import { recognize } from '../ocr';
@@ -1172,6 +1173,7 @@ export function App() {
         )}
       </small>
       <CompressPanel run={run} current={currentSource} notify={notify} locked={locked} />
+      <PdfToolsPanel run={run} current={currentSource} notify={notify} locked={locked} />
     </div>
   );
   return (
