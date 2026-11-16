@@ -24,7 +24,6 @@ import {
   ScanText,
   FileDown,
   Info,
-  Minimize2,
   Upload,
   ArrowUpRight,
   LockKeyhole,
@@ -71,13 +70,15 @@ import {
   uid,
   download,
   errorMessage,
-  safeName,
   fileSize,
   parsePages,
   checkAbort,
 } from '../utils/files';
 import { loadPdf, extractPage, renderRaster, canvasBytes } from '../pdf/reader';
 import { History } from '../pdf/history';
+import { CompressPanel } from './CompressPanel';
+import { PdfToolsPanel } from './PdfToolsPanel';
+import { ComparePanel } from './ComparePanel';
 import { processJob, restoreSource, getFont, type RasterPage } from '../workers/client';
 import type { RestoredSource } from '../pdf/editable';
 import { recognize } from '../ocr';
@@ -127,7 +128,6 @@ export function App() {
     [modal, setModal] = useState<'tools' | 'metadata' | null>(null),
     [range, setRange] = useState(''),
     [ocrLanguage, setOcrLanguage] = useState<'fra' | 'eng' | 'fra+eng'>('fra+eng'),
-    [compression, setCompression] = useState('structure'),
     [metadata, setMetadata] = useState(''),
     [toast, setToast] = useState<{ text: string; error?: boolean }>(),
     [job, setJob] = useState<{ label: string; percent: number; controller: AbortController }>();
@@ -942,23 +942,8 @@ export function App() {
       searchable ? 'Création du PDF recherchable' : 'Compression du PDF',
       async (signal, progress) => {
         const source = await currentSource(signal);
-        if (!searchable && compression === 'structure') {
-          download(source.bytes, safeName(source.name) + '-optimise.pdf');
-          notify(
-            t('Réencodage structurel : {size}. Aucun gain de taille garanti.', {
-              size: fileSize(source.bytes.length),
-            }),
-          );
-          return;
-        }
-        const scale = searchable
-          ? 2
-          : compression === 'strong'
-            ? 1
-            : compression === 'balanced'
-              ? 1.5
-              : 2;
-        const quality = compression === 'strong' ? 0.55 : compression === 'balanced' ? 0.75 : 0.9;
+        const scale = 2;
+        const quality = 0.9;
         const pages = await rasterPages(source, signal, progress, scale, quality, searchable);
         const [f] = await processJob(
           {
@@ -1188,28 +1173,9 @@ export function App() {
           'L’OCR doit être exécuté avant l’export. Le PDF recherchable est reconstruit en images avec une couche invisible de texte ; mise en page des mots approximative, liens et vecteurs perdus.',
         )}
       </small>
-      <h3>{t('Compression')}</h3>
-      <div className="row">
-        <select
-          aria-label={t('Niveau de compression')}
-          value={compression}
-          onChange={(e) => setCompression(e.target.value)}
-        >
-          <option value="structure">{t('Structure — sans rasterisation')}</option>
-          <option value="light">{t('JPEG détaillé — 144 dpi')}</option>
-          <option value="balanced">{t('JPEG équilibré — 108 dpi')}</option>
-          <option value="strong">{t('JPEG léger — 72 dpi')}</option>
-        </select>
-        <Button disabled={locked} onClick={() => compress()}>
-          <Minimize2 size={17} />
-          {t('Compresser et télécharger')}
-        </Button>
-      </div>
-      <p className="notice">
-        {t(
-          'La compression JPEG transforme les pages en images : texte sélectionnable, liens, formulaires et vecteurs sont perdus. Le résultat peut être plus volumineux selon le document.',
-        )}
-      </p>
+      <CompressPanel run={run} current={currentSource} notify={notify} locked={locked} />
+      <PdfToolsPanel run={run} current={currentSource} notify={notify} locked={locked} />
+      <ComparePanel run={run} current={currentSource} locked={locked} />
     </div>
   );
   return (

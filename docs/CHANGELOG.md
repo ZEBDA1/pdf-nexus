@@ -4,6 +4,18 @@ Ce document conserve l'historique complet des versions, correctifs et évolution
 
 ---
 
+## Non publié
+
+- Compression locale des images : préréglages Léger / Équilibré / Fort / Personnalisé (curseurs résolution et qualité), taille cible avec ajustement automatique, aperçu avant/après avant téléchargement, compression par lot avec sortie ZIP.
+- Recompression des images JPEG RVB et Flate RVB/gris, plafonnement des très grandes images, suppression des vignettes, des objets orphelins et des métadonnées. Texte, liens et formulaires conservés ; jamais de fichier plus gros que l’original.
+- Tout est exécuté localement : aucun code distant, aucune donnée envoyée, aucune nouvelle permission.
+- Fusion des flux binaires dupliqués avant l’enregistrement compressé.
+- Nouveaux outils locaux : édition des métadonnées, numérotation des pages, en-têtes, pieds de page et numérotation Bates, création et lecture des signets, extraction de toutes les images (JPEG tel quel, Flate en PNG) en ZIP.
+- Aucune permission ni dépendance ajoutée ; `npm run build` et les audits du paquet (code distant, ZIP) réussis.
+- Comparaison de deux PDF : mots ajoutés/supprimés par page et différence visuelle ; pages absentes signalées.
+- Les signets des pages conservées sont maintenus lors de la fusion et de la réorganisation.
+- Tests navigateur Playwright pour la compression et la compression par lot.
+
 ## Correctif local 1.7.1 — lisibilité du paquet, Red Titanium
 
 - Retrait du module de repli `Object.create` de PDF.js cité par Google, dans le lecteur ET son Worker. Remplacement complet par la fonction native des navigateurs supportés ; aucune réécriture destinée à cacher des chaînes. Empreinte SHA-256 du module vérifiée avant modification, avec échec du build si la dépendance change.

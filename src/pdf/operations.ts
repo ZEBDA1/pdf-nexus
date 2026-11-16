@@ -17,6 +17,7 @@ import fontkit from '@pdf-lib/fontkit';
 import type { Annotation, Workspace, Source, ExportOptions } from '../types';
 import { safeUrl } from '../utils/files';
 import type { RasterPage } from '../workers/client';
+import { applyOutline, outlineOf, type OutlineItem } from './tools';
 
 const color = (hex: string) =>
   rgb(
@@ -184,6 +185,26 @@ export async function drawAnnotation(
     page.drawImage(image, { x, y, width, height });
   }
 }
+/** Conserve les signets des sources pour les pages restantes (première occurrence), dans l'ordre du document final. */
+function carryOutlines(
+  workspace: Workspace,
+  sources: Map<number, PDFDocument>,
+  output: PDFDocument,
+) {
+  const items: OutlineItem[] = [];
+  const entries = [...sources.entries()].sort((a, b) => a[0] - b[0]);
+  for (const [sourceId, doc] of entries) {
+    for (const item of outlineOf(doc)) {
+      const index = workspace.pages.findIndex(
+        (p) => p.source === sourceId && p.index === item.page - 1,
+      );
+      if (index >= 0) items.push({ title: item.title, page: index + 1 });
+    }
+  }
+  items.sort((a, b) => a.page - b.page);
+  if (items.length) applyOutline(output, items);
+}
+
 export async function exportWorkspace(
   workspace: Workspace,
   fontBytes: Uint8Array,
@@ -256,6 +277,7 @@ export async function exportWorkspace(
     progress?.(((i + 1) / workspace.pages.length) * 0.65);
   }
   forms.finish();
+  carryOutlines(workspace, sources, output);
   if (!options.preserveForms || options.mode === 'flattened')
     output.getForm().flatten({ updateFieldAppearances: false });
   for (const [i, page] of output.getPages().entries()) {
