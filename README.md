@@ -7,7 +7,7 @@
 **L'atelier PDF tout-en-un, ultra-rapide et 100% privé pour votre navigateur.**  
 _Éditez, organisez, convertissez, signez et analysez vos PDF directement dans Google Chrome & Microsoft Edge — sans aucun serveur externe._
 
-[![Version](https://img.shields.io/badge/version-1.7.1-emerald.svg?style=for-the-badge&logo=semver&logoColor=white)](docs/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.8.0-emerald.svg?style=for-the-badge&logo=semver&logoColor=white)](docs/CHANGELOG.md)
 [![Manifest V3](https://img.shields.io/badge/Chrome_Extension-Manifest_V3-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](public/manifest.json)
 [![100% Local](https://img.shields.io/badge/Privacy-100%25_Client--Side-10b981?style=for-the-badge&logo=shield&logoColor=white)](docs/PRIVACY.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
@@ -34,6 +34,10 @@ _Éditez, organisez, convertissez, signez et analysez vos PDF directement dans G
 > Contrairement aux services cloud tiers (iLovePDF, Smallpdf, etc.), **PDF Nexus traite vos documents sur votre machine par défaut**. Seul un mode IA distant configuré et confirmé explicitement envoie des extraits au fournisseur choisi. Vos documents restent strictement les vôtres.
 
 <br />
+
+## Mise à jour 1.8.0 — compression locale, comparaison et outils PDF
+
+Compression locale des images (préréglages Léger / Équilibré / Fort / Personnalisé, taille cible, aperçu avant/après, compression par lot en ZIP, fusion des flux dupliqués et nettoyage des objets orphelins), comparaison de deux PDF (différences textuelles et visuelles), édition des métadonnées, numérotation des pages / en-têtes / pieds de page / Bates, gestion des signets et extraction d’images en ZIP. Voir [l’historique des versions](docs/CHANGELOG.md).
 
 ## Correctif local 1.7.1 — lisibilité du code distribué
 
