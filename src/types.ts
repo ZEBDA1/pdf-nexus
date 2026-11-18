@@ -55,6 +55,7 @@ export interface PageRef {
   rotation: number;
   annotations: Annotation[];
   nativeEdits?: NativeEdit[];
+  ocr?: { text: string; items: TextItem[] };
 }
 export type FormValue = string | string[] | boolean;
 export interface ExportOptions {
@@ -109,8 +110,18 @@ export interface PageText {
   items: TextItem[];
   ocr?: boolean;
 }
+export interface UserProfile {
+  name: string;
+  email: string;
+  phone: string;
+  company: string;
+}
 export interface Preferences {
   autoSave: boolean;
+  storageConsent?: 'accepted' | 'declined';
+  vaultEnabled?: boolean;
+  nightReading?: boolean;
+  profile?: UserProfile;
   theme: 'light' | 'dark' | 'auto';
   language: 'fr' | 'en';
   setupCompleted?: boolean;
@@ -122,10 +133,12 @@ export interface Preferences {
   model: string;
 }
 export const defaultPreferences: Preferences = {
-  autoSave: true,
+  autoSave: false,
+  vaultEnabled: false,
+  nightReading: false,
   theme: 'light',
   language: 'fr',
-  remember: true,
+  remember: false,
   favorites: ['merge', 'convert', 'ocr'],
   exportScale: 1.5,
   aiMode: 'extract',

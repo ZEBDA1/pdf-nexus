@@ -233,4 +233,30 @@ describe('Réouverture des ajouts Nexus', () => {
       (await listNativeRuns(result.source.bytes, 0)).some((r) => r.text === 'Autre editeur'),
     ).toBe(true);
   });
+
+  it('persiste et restaure la couche OCR en export éditable et l’omet en export aplati', async () => {
+    const w = await workspace();
+    w.pages[0].ocr = {
+      text: 'Facture n° 42\nTotal 150 EUR',
+      items: [{ text: 'Facture', x: 30, y: 500, width: 55, height: 14 }],
+    };
+    const editableBytes = await exportWorkspace(w, font, undefined, {
+      mode: 'editable',
+      preserveForms: true,
+    });
+    const restored = await restoreEditableSource({
+      name: 'ocr-editable.pdf',
+      bytes: editableBytes,
+    });
+    expect(restored.ocr[0]).toEqual(w.pages[0].ocr);
+
+    const flatBytes = await exportWorkspace(w, font, undefined, {
+      mode: 'flattened',
+      preserveForms: false,
+    });
+    const flatPdf = await PDFDocument.load(flatBytes);
+    expect(flatPdf.getPage(0).node.has(PDFName.of('NexusEdits'))).toBe(false);
+    const flatRestored = await restoreEditableSource({ name: 'ocr-flat.pdf', bytes: flatBytes });
+    expect(flatRestored.ocr).toEqual([]);
+  });
 });

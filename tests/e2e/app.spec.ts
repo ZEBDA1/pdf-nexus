@@ -21,7 +21,15 @@ test('Tableau de bord, édition, export, historique et suppression locale', asyn
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.addInitScript(() =>
-    localStorage.setItem('nexus-preferences', JSON.stringify({ setupCompleted: true })),
+    localStorage.setItem(
+      'nexus-preferences',
+      JSON.stringify({
+        setupCompleted: true,
+        storageConsent: 'accepted',
+        autoSave: true,
+        remember: true,
+      }),
+    ),
   );
   await page.goto('/editor.html');
   await expect(page.getByRole('heading', { name: 'Les PDF, simplement.' })).toBeVisible();

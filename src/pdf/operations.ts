@@ -285,7 +285,7 @@ export async function exportWorkspace(
     // Native widget choices now live in real form fields, not a second painted
     // checkbox. Keep ordinary additions in a separate editable content stream.
     const annotations = ref.annotations.filter((a) => !a.id.startsWith('widget-'));
-    if (options.mode === 'editable') preserveEditablePage(page, annotations);
+    if (options.mode === 'editable') preserveEditablePage(page, annotations, ref.ocr);
     const additions = PDFPage.of(page.node, page.ref, output);
     for (const a of annotations) await drawAnnotation(output, additions, a, font);
     await sealEditablePage(page);

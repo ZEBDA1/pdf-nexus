@@ -6,7 +6,15 @@ test('Champs natifs : saisie, Tab, boutons radio, listes, récupération et expo
   page,
 }) => {
   await page.addInitScript(() =>
-    localStorage.setItem('nexus-preferences', JSON.stringify({ setupCompleted: true })),
+    localStorage.setItem(
+      'nexus-preferences',
+      JSON.stringify({
+        setupCompleted: true,
+        storageConsent: 'accepted',
+        autoSave: true,
+        remember: true,
+      }),
+    ),
   );
   await page.goto('/editor.html');
   const pdf = await PDFDocument.create(),

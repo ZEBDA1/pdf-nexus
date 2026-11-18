@@ -5,8 +5,8 @@ import { replacementFonts, replacementFontForText } from '../pdf/text-style';
 import { usePdfZoom } from './usePdfZoom';
 import { AllTextEditor } from './AllTextEditor';
 import { SignatureDialog } from './SignatureDialog';
-import { t } from '../i18n';
-import type { NativeEdit } from '../types';
+import { getLocale, t } from '../i18n';
+import type { NativeEdit, UserProfile } from '../types';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
@@ -40,6 +40,10 @@ import {
   Hand,
   Signature,
   SquareCheck,
+  Moon,
+  Sun,
+  Command,
+  UserRound,
 } from 'lucide-react';
 import { Button, IconButton } from '../components/ui';
 import { PdfPage } from './PdfPage';
@@ -96,6 +100,12 @@ export function Reader({
   openTools,
   getText,
   notify,
+  nightReading = false,
+  toggleNightReading,
+  profile,
+  openPalette,
+  openReplaceKey = 0,
+  openObjectsKey = 0,
 }: {
   replaceNative: (changes: { pageId: string; edit: NativeEdit }[]) => void;
   selectedIds: string[];
@@ -147,6 +157,12 @@ export function Reader({
   openTools: () => void;
   getText: (signal: AbortSignal) => Promise<PageText[]>;
   notify: (s: string, error?: boolean) => void;
+  nightReading?: boolean;
+  toggleNightReading?: () => void;
+  profile?: UserProfile;
+  openPalette?: () => void;
+  openReplaceKey?: number;
+  openObjectsKey?: number;
 }) {
   const setZoom = usePdfZoom(zoom, setDocumentZoom);
   const [sidebar, setSidebar] = useState(true),
@@ -161,6 +177,18 @@ export function Reader({
   const [objects, setObjects] = useState(false);
   const searchControl = useRef<AbortController | undefined>(undefined);
   useEffect(() => () => searchControl.current?.abort(), []);
+  useEffect(() => {
+    if (openReplaceKey) setReplaceOpen(true);
+  }, [openReplaceKey]);
+  useEffect(() => {
+    if (openObjectsKey) {
+      setObjects(true);
+      setAllText(false);
+      setNative(false);
+      setHand(false);
+      setTool('select');
+    }
+  }, [openObjectsKey]);
   const hits = results.flatMap((p) =>
     occurrences(p.items.map((i) => i.text).join(' '), searchQuery).map((_, index) => ({
       page: p.page,
@@ -420,6 +448,11 @@ export function Reader({
           </span>
         </div>
         <div className="row">
+          {openPalette && (
+            <IconButton label={t('Palette de commandes (Ctrl+K)')} onClick={openPalette}>
+              <Command size={17} />
+            </IconButton>
+          )}
           <IconButton label={t('Imprimer le document')} onClick={print}>
             <Printer size={18} />
           </IconButton>
@@ -523,6 +556,17 @@ export function Reader({
           >
             {t('Page')}
           </Button>
+          {toggleNightReading && (
+            <button
+              className={`icon-button ${nightReading ? 'active' : ''}`}
+              title={t('Mode lecture nocturne')}
+              aria-label={t('Mode lecture nocturne')}
+              aria-pressed={nightReading}
+              onClick={toggleNightReading}
+            >
+              {nightReading ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+          )}
           <IconButton
             label={t('Plein écran')}
             onClick={() => {
@@ -702,6 +746,33 @@ export function Reader({
               <SquareCheck size={17} />
               {t('Repérer les cases')}
             </Button>
+            <Button
+              disabled={workspace.encrypted}
+              onClick={(e) => {
+                e.currentTarget.closest('details')?.removeAttribute('open');
+                const parts = [
+                  profile?.name?.trim(),
+                  profile?.company?.trim(),
+                  profile?.email?.trim(),
+                  profile?.phone?.trim(),
+                ].filter(Boolean);
+                if (!parts.length) {
+                  notify(
+                    'Renseignez votre profil d’identité local dans les paramètres pour insérer vos coordonnées.',
+                    true,
+                  );
+                  return;
+                }
+                setText(parts.join('\n'));
+                setNative(false);
+                setHand(false);
+                setTool('text');
+                notify('Coordonnées prêtes : cliquez dans la page pour les placer.');
+              }}
+            >
+              <UserRound size={17} />
+              {t('Insérer mes coordonnées')}
+            </Button>
           </div>
         </details>
         <Button
@@ -792,6 +863,33 @@ export function Reader({
             </label>
           ) : (
             <>
+              {tool === 'stamp' && (
+                <div
+                  className="row stamp-presets"
+                  role="group"
+                  aria-label={t('Tampons intelligents')}
+                >
+                  {(
+                    [
+                      'LU ET APPROUVÉ',
+                      'CONFIDENTIEL',
+                      'VALIDÉ',
+                      'COPIE CONFORME',
+                      'À REVOIR',
+                    ] as const
+                  ).map((label) => (
+                    <Button
+                      key={label}
+                      className="subtle"
+                      onClick={() =>
+                        setText(`${t(label)}\n${new Date().toLocaleDateString(getLocale())}`)
+                      }
+                    >
+                      {t(label)}
+                    </Button>
+                  ))}
+                </div>
+              )}
               <textarea
                 aria-label={t('Texte de l’annotation')}
                 placeholder={
@@ -939,7 +1037,7 @@ export function Reader({
           </aside>
         )}
         <div
-          className={`page-scroller ${hand ? 'hand-mode' : ''}`}
+          className={`page-scroller ${hand ? 'hand-mode' : ''} ${nightReading ? 'night-reading' : ''}`}
           ref={scroller}
           onPointerDownCapture={(e) => {
             if (e.button !== 1 && !(hand && e.button === 0)) return;

@@ -10,7 +10,7 @@ import {
   StandardFonts,
   type PDFPage,
 } from 'pdf-lib';
-import type { Annotation, Source } from '../types';
+import type { Annotation, Source, TextItem } from '../types';
 import { safeUrl } from '../utils/files';
 
 // Private, inert page data. Only the current page's base streams and current
@@ -57,6 +57,29 @@ function color(value: unknown) {
 }
 function point(value: any) {
   return { x: number(value.x), y: number(value.y) };
+}
+function textItem(value: any): TextItem {
+  if (!value || typeof value !== 'object') throw new TypeError('Invalid OCR item');
+  return {
+    text: string(value.text, 10_000),
+    x: number(value.x),
+    y: number(value.y),
+    width: number(value.width, 0),
+    height: number(value.height, 0),
+  };
+}
+function ocrPayload(value: any): { text: string; items: TextItem[] } {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    !Array.isArray(value.items) ||
+    value.items.length > 50_000
+  )
+    throw new TypeError('Invalid OCR payload');
+  return {
+    text: string(value.text, 2_000_000),
+    items: value.items.map(textItem),
+  };
 }
 function annotation(value: any): Annotation {
   if (!value || !types.has(value.type)) throw new TypeError('Invalid annotation type');
@@ -124,8 +147,12 @@ function annotation(value: any): Annotation {
 
 /** Capture before drawing additions on a fresh PDFPage wrapper. Normalizing
  * first isolates the base CTM; clone resource tables before drawing mutates them. */
-export function preserveEditablePage(page: PDFPage, annotations: Annotation[]) {
-  if (!annotations.length) return;
+export function preserveEditablePage(
+  page: PDFPage,
+  annotations: Annotation[],
+  ocr?: { text: string; items: TextItem[] },
+) {
+  if (!annotations.length && !ocr) return;
   if (annotations.length > 2000) throw new Error('Limite de 2 000 ajouts modifiables par page.');
   const { Contents, Resources } = page.node.normalizedEntries();
   const baseResources = Resources.clone();
@@ -143,16 +170,20 @@ export function preserveEditablePage(page: PDFPage, annotations: Annotation[]) {
   );
   if (data.length > maxData)
     throw new Error('Les données d’édition dépassent la limite de 32 Mio par page.');
-  page.node.set(
-    key,
-    page.doc.context.obj({
-      Version: 1,
-      BaseContents: Contents?.clone() ?? page.doc.context.obj([]),
-      BaseResources: baseResources,
-      BaseAnnots: page.node.Annots()?.clone() ?? page.doc.context.obj([]),
-      Data: page.doc.context.register(page.doc.context.stream(data)),
-    }),
-  );
+  const payload = page.doc.context.obj({
+    Version: 1,
+    BaseContents: Contents?.clone() ?? page.doc.context.obj([]),
+    BaseResources: baseResources,
+    BaseAnnots: page.node.Annots()?.clone() ?? page.doc.context.obj([]),
+    Data: page.doc.context.register(page.doc.context.stream(data)),
+  });
+  if (ocr) {
+    const ocrBytes = new TextEncoder().encode(JSON.stringify(ocr));
+    if (ocrBytes.length > maxData)
+      throw new Error('Les données OCR dépassent la limite de 32 Mio par page.');
+    payload.set(PDFName.of('Ocr'), page.doc.context.register(page.doc.context.stream(ocrBytes)));
+  }
+  page.node.set(key, payload);
 }
 
 async function contentDigest(page: PDFPage) {
@@ -189,11 +220,12 @@ export async function sealEditablePage(page: PDFPage) {
 export interface RestoredSource {
   source: Source;
   annotations: Annotation[][];
+  ocr: ({ text: string; items: TextItem[] } | undefined)[];
   invalidPages: number;
 }
 
 export async function restoreEditableSource(source: Source): Promise<RestoredSource> {
-  const result: RestoredSource = { source, annotations: [], invalidPages: 0 };
+  const result: RestoredSource = { source, annotations: [], ocr: [], invalidPages: 0 };
   let doc: PDFDocument;
   try {
     doc = await PDFDocument.load(source.bytes, { updateMetadata: false });
@@ -228,6 +260,22 @@ export async function restoreEditableSource(source: Source): Promise<RestoredSou
         totalData > 128 * 1024 * 1024
       )
         throw new TypeError('Invalid edit data');
+      let restoredOcr: { text: string; items: TextItem[] } | undefined;
+      if (state.has(PDFName.of('Ocr'))) {
+        const ocrStream = doc.context.lookup(state.get(PDFName.of('Ocr')));
+        if (!(ocrStream instanceof PDFRawStream)) throw new TypeError('Invalid OCR stream');
+        const ocrBytes = ocrStream.getContents();
+        totalData += ocrBytes.length;
+        if (
+          ocrStream.dict.has(PDFName.of('Filter')) ||
+          ocrBytes.length > maxData ||
+          totalData > 128 * 1024 * 1024
+        )
+          throw new TypeError('Invalid OCR data');
+        restoredOcr = ocrPayload(
+          JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(ocrBytes)),
+        );
+      }
       for (const entry of contents.asArray())
         if (!(doc.context.lookup(entry) instanceof PDFRawStream))
           throw new TypeError('Invalid base stream');
@@ -243,6 +291,7 @@ export async function restoreEditableSource(source: Source): Promise<RestoredSou
       else page.node.delete(PDFName.of('Annots'));
       page.node.delete(key);
       result.annotations[index] = annotations;
+      result.ocr[index] = restoredOcr;
       restored = true;
     } catch {
       result.invalidPages++;

@@ -11,7 +11,7 @@ export function Setup({
 }: {
   prefs: Preferences;
   update: (p: Preferences) => void;
-  finish: () => void;
+  finish: (p: Preferences) => void;
 }) {
   const [step, setStep] = useState(0),
     [error, setError] = useState(''),
@@ -37,7 +37,7 @@ export function Setup({
       <main className="setup-card">
         <Brand />
         <div className="setup-steps">
-          {[0, 1, 2].map((n) => (
+          {[0, 1, 2, 3].map((n) => (
             <span key={n} className={n <= step ? 'active' : ''} />
           ))}
         </div>
@@ -47,7 +47,9 @@ export function Setup({
             ? t('Commençons par votre langue.')
             : step === 1
               ? t('Un espace à votre image.')
-              : t('Vos PDF, votre navigateur.')}
+              : step === 2
+                ? t('Vos PDF, votre navigateur.')
+                : t('Vos données sur cet appareil.')}
         </h1>
         {step === 0 && (
           <>
@@ -115,6 +117,20 @@ export function Setup({
             </small>
           </>
         )}
+        {step === 3 && (
+          <>
+            <p>
+              {t(
+                'Pour permettre la reprise de vos documents, PDF Nexus peut enregistrer localement dans votre navigateur (IndexedDB) les fichiers récents, brouillons, annotations, valeurs de formulaires et échanges avec l’assistant.',
+              )}
+            </p>
+            <small>
+              {t(
+                'Aucun document n’est envoyé en ligne. En cas de refus, vous pouvez ouvrir, éditer et exporter vos PDF normalement, sans conservation après fermeture de l’onglet. Modifiable à tout moment dans les paramètres (avec chiffrement local facultatif par phrase secrète).',
+              )}
+            </small>
+          </>
+        )}
         {error && <p role="alert">{error}</p>}
         <footer>
           {step > 0 && (
@@ -122,12 +138,42 @@ export function Setup({
               {t('Retour')}
             </button>
           )}
-          <button
-            className="button primary"
-            onClick={() => (step < 2 ? setStep(step + 1) : finish())}
-          >
-            {step === 2 ? t('Commencer') : t('Continuer')}
-          </button>
+          {step < 3 ? (
+            <button className="button primary" onClick={() => setStep(step + 1)}>
+              {t('Continuer')}
+            </button>
+          ) : (
+            <>
+              <button
+                className="button"
+                onClick={() =>
+                  finish({
+                    ...prefs,
+                    storageConsent: 'declined',
+                    autoSave: false,
+                    remember: false,
+                    setupCompleted: true,
+                  })
+                }
+              >
+                {t('Éditer sans sauvegarde locale')}
+              </button>
+              <button
+                className="button primary"
+                onClick={() =>
+                  finish({
+                    ...prefs,
+                    storageConsent: 'accepted',
+                    autoSave: true,
+                    remember: true,
+                    setupCompleted: true,
+                  })
+                }
+              >
+                {t('Autoriser la sauvegarde locale')}
+              </button>
+            </>
+          )}
         </footer>
         <p className="setup-privacy">{t('Gratuit. Local par défaut. Sans publicité.')}</p>
       </main>

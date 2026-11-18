@@ -4,17 +4,17 @@ Ce document conserve l'historique complet des versions, correctifs et évolution
 
 ---
 
-## Version 1.8.0 — compression locale, comparaison et outils PDF
+## Version 1.8.0 — compression étendue, coffre chiffré, OCR persistant et confort
 
-- Compression locale des images : préréglages Léger / Équilibré / Fort / Personnalisé (curseurs résolution et qualité), taille cible avec ajustement automatique, aperçu avant/après avant téléchargement, compression par lot avec sortie ZIP.
-- Recompression des images JPEG RVB et Flate RVB/gris, plafonnement des très grandes images, suppression des vignettes, des objets orphelins et des métadonnées. Texte, liens et formulaires conservés ; jamais de fichier plus gros que l’original.
-- Tout est exécuté localement : aucun code distant, aucune donnée envoyée, aucune nouvelle permission.
-- Fusion des flux binaires dupliqués avant l’enregistrement compressé.
-- Nouveaux outils locaux : édition des métadonnées, numérotation des pages, en-têtes, pieds de page et numérotation Bates, création et lecture des signets, extraction de toutes les images (JPEG tel quel, Flate en PNG) en ZIP.
-- Aucune permission ni dépendance ajoutée ; `npm run build` et les audits du paquet (code distant, ZIP) réussis.
-- Comparaison de deux PDF : mots ajoutés/supprimés par page et différence visuelle ; pages absentes signalées.
-- Les signets des pages conservées sont maintenus lors de la fusion et de la réorganisation.
-- Tests navigateur Playwright pour la compression et la compression par lot.
+- **Conformité & stockage consenti** : aucune écriture persistante dans IndexedDB par défaut (`autoSave` et `remember` désactivés tant que `storageConsent` n’est pas accordé). Choix explicite dès l’étape 4 de la configuration initiale, par bannière non bloquante après mise à jour et dans les paramètres ; refuser permet toujours d’ouvrir, éditer et exporter librement pour la session courante.
+- **Coffre local chiffré facultatif (WebCrypto)** : chiffrement `AES-GCM` 256 bits avec clé dérivée par `PBKDF2` (SHA-256, 210 000 itérations, clé non extractible en mémoire uniquement) pour les brouillons, fichiers récents et échanges. Migration des données existantes à l’activation, déverrouillage rapide sur l’accueil et désactivation/déchiffrement depuis les paramètres.
+- **Fiabilité de la reprise Chrome** : vidage immédiat de la sauvegarde en attente sur `beforeunload` (`useAutosave`) et sérialisation des lectures `listDrafts` après la file d’écriture.
+- **Compression avancée en Worker (`OffscreenCanvas`)** : prise en charge des prédicteurs PNG (`10..15`) et TIFF (`2`), des profils `/ICCBased`, du `DeviceCMYK` 8 bpc, des images `DeviceGray` JPEG et du redimensionnement proportionnel des masques `SMask`, avec barre de progression, case niveaux de gris et conservation ou retrait des métadonnées.
+- **Profils de compression « Prêts à l’envoi »** : raccourcis en un clic _Dépôt administratif (< 2 Mio)_, _E-mail (< 5 Mio)_ et _Archivage fidèle_.
+- **Persistance OCR & redressement de scans (De-skew)** : sauvegarde locale de la couche OCR reconnue dans les brouillons IndexedDB et dans le flux `Ocr` des exports rééditables Nexus (`NexusEdits`) ; détection et redressement des scans inclinés ; amélioration du repli de surlignage sur les scans.
+- **Productivité & confort** : palette de commandes au clavier (`Ctrl+K` / `Cmd+K`), mode lecture nocturne à l’écran sans altérer les exports, tampons intelligents datés et profil d’identité local facultatif pour insérer ses coordonnées en un clic dans _Remplir et signer_.
+- **Outils PDF & comparaison** : édition des métadonnées, numérotation des pages / en-têtes / pieds de page / numérotation Bates, gestion des signets lors de la fusion et réorganisation, extraction des images en ZIP, et comparaison textuelle/visuelle de deux PDF.
+- **Qualité & paquet Store** : aucune permission ni dépendance ajoutée ; traductions complètes FR/EN (`0` manquant), tests unitaires élargis (`vault`, `deskew`, `compress`, `editable`), et audits `npm run check` (code distant, ZIP Store) validés.
 
 ## Correctif local 1.7.1 — lisibilité du paquet, Red Titanium
 

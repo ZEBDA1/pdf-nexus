@@ -1,6 +1,14 @@
 import { db } from './index';
 import { cloneSnapshot, type History } from '../pdf/history';
 import type { Snapshot, Source, Workspace } from '../types';
+import {
+  decryptFromVault,
+  encryptForVault,
+  isEncryptedEnvelope,
+  isVaultEnabled,
+  isVaultUnlocked,
+  type EncryptedEnvelope,
+} from './vault';
 
 export const draftLimits = {
   count: 5,
@@ -14,6 +22,7 @@ export interface DraftInfo {
   updated: number;
   pages: number;
   size: number;
+  encryptedName?: EncryptedEnvelope;
 }
 export interface DraftState {
   snapshot: Snapshot;
@@ -95,6 +104,23 @@ export function saveDraft(
   };
   return queued(async () => {
     if (requestedEpoch !== epoch) throw new DOMException('Opération annulée', 'AbortError');
+    const vault = await isVaultEnabled();
+    if (vault && !isVaultUnlocked())
+      throw new Error('Le coffre local est verrouillé. Déverrouillez-le pour enregistrer.');
+    const rawSources = workspace.sources.map(({ name, bytes }) => ({ name, bytes }));
+    const storedInfo: DraftInfo = vault
+      ? {
+          id,
+          name: 'Document chiffré',
+          encryptedName: await encryptForVault(workspace.name),
+          updated: info.updated,
+          pages: info.pages,
+          size: info.size,
+        }
+      : info;
+    const storedState = vault ? await encryptForVault(state) : state;
+    const storedSourcesPayload = vault ? await encryptForVault(rawSources) : undefined;
+    if (requestedEpoch !== epoch) throw new DOMException('Opération annulée', 'AbortError');
     const d = await db();
     try {
       const tx = d.transaction(['drafts', 'draftStates', 'draftSources'], 'readwrite');
@@ -115,14 +141,13 @@ export function saveDraft(
       const stored = await sources.get(id);
       if (stored?.revision !== sourceRevision)
         await sources.put(
-          {
-            revision: sourceRevision,
-            sources: workspace.sources.map(({ name, bytes }) => ({ name, bytes })),
-          },
+          vault
+            ? { revision: sourceRevision, encrypted: storedSourcesPayload }
+            : { revision: sourceRevision, sources: rawSources },
           id,
         );
-      await tx.objectStore('draftStates').put(state, id);
-      await metadata.put(info);
+      await tx.objectStore('draftStates').put(storedState, id);
+      await metadata.put(storedInfo);
       await tx.done;
       return info;
     } finally {
@@ -131,27 +156,52 @@ export function saveDraft(
   });
 }
 export async function listDrafts(): Promise<DraftInfo[]> {
+  await queue;
+  if ((await isVaultEnabled()) && !isVaultUnlocked()) return [];
   const d = await db();
   try {
-    return ((await d.getAll('drafts')) as DraftInfo[]).sort((a, b) => b.updated - a.updated);
+    const raw = (await d.getAll('drafts')) as DraftInfo[];
+    const result: DraftInfo[] = [];
+    for (const item of raw) {
+      if (isEncryptedEnvelope(item.encryptedName)) {
+        result.push({
+          ...item,
+          name: await decryptFromVault<string>(item.encryptedName),
+        });
+      } else {
+        result.push(item);
+      }
+    }
+    return result.sort((a, b) => b.updated - a.updated);
   } finally {
     d.close();
   }
 }
 export async function loadDraft(id: string): Promise<SavedDraft> {
   await queue;
+  if ((await isVaultEnabled()) && !isVaultUnlocked())
+    throw new Error('Le coffre local est verrouillé. Déverrouillez-le pour lire ces données.');
   const d = await db();
   try {
     const tx = d.transaction(['drafts', 'draftStates', 'draftSources']);
-    const [info, state, source] = await Promise.all([
+    const [rawInfo, rawState, rawSource] = await Promise.all([
       tx.objectStore('drafts').get(id),
       tx.objectStore('draftStates').get(id),
       tx.objectStore('draftSources').get(id),
     ]);
     await tx.done;
-    if (!info || !state || !source?.sources?.length)
-      throw new Error('Ce brouillon n’est plus disponible.');
-    return { info, state, sources: source.sources };
+    if (!rawInfo || !rawState || !rawSource) throw new Error('Ce brouillon n’est plus disponible.');
+    const info: DraftInfo = isEncryptedEnvelope(rawInfo.encryptedName)
+      ? { ...rawInfo, name: await decryptFromVault<string>(rawInfo.encryptedName) }
+      : rawInfo;
+    const state: DraftState = isEncryptedEnvelope(rawState)
+      ? await decryptFromVault<DraftState>(rawState)
+      : rawState;
+    const sources: Source[] = isEncryptedEnvelope(rawSource.encrypted)
+      ? await decryptFromVault<Source[]>(rawSource.encrypted)
+      : rawSource.sources;
+    if (!sources?.length) throw new Error('Ce brouillon n’est plus disponible.');
+    return { info, state, sources };
   } finally {
     d.close();
   }

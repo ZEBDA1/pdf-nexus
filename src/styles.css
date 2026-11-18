@@ -3876,3 +3876,213 @@ progress::-webkit-progress-value {
   background: var(--accent-soft);
   color: var(--accent);
 }
+
+.setup-card footer {
+  flex-wrap: wrap;
+}
+
+.consent-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 14px 28px 0;
+  padding: 14px 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 12px;
+  background: var(--accent-soft);
+}
+.consent-banner strong {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.consent-banner p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.consent-status {
+  margin-bottom: 16px;
+}
+.consent-status p {
+  margin: 0 0 10px;
+}
+
+.vault-unlock-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+  padding: 16px 20px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.vault-unlock-banner > span {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.vault-unlock-banner > div {
+  flex: 1;
+  min-width: 220px;
+}
+.vault-unlock-banner strong {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+.vault-unlock-banner small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.vault-unlock-banner form {
+  flex-wrap: nowrap;
+}
+.vault-unlock-banner input {
+  min-width: 190px;
+}
+
+.vault-card {
+  margin: 22px 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.vault-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.vault-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.profile-grid .field {
+  margin: 6px 0;
+}
+
+.night-reading.page-scroller {
+  background: #14151c;
+}
+.night-reading .pdf-page canvas,
+.night-reading .pdf-page .annotation-layer {
+  filter: invert(0.88) hue-rotate(180deg);
+}
+
+.stamp-presets,
+.compress-profiles {
+  flex-wrap: wrap;
+}
+.stamp-presets .button,
+.compress-profiles .button {
+  font-size: 10px;
+  min-height: 28px;
+  padding: 5px 10px;
+}
+
+.command-backdrop {
+  align-items: flex-start;
+  padding-top: min(14vh, 110px);
+}
+.command-palette {
+  width: min(560px, 94vw);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 22px 60px #14102838;
+  overflow: hidden;
+}
+.command-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+.command-search input {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 13px;
+}
+.command-search input:focus {
+  outline: none;
+}
+.command-search kbd,
+.command-row kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 10px;
+  font-family: inherit;
+}
+.command-list {
+  max-height: min(55vh, 380px);
+  overflow: auto;
+  padding: 6px;
+}
+.command-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  color: var(--text);
+}
+.command-row > span {
+  display: grid;
+  gap: 2px;
+}
+.command-row strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.command-row small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.command-row.active,
+.command-row:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.command-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}

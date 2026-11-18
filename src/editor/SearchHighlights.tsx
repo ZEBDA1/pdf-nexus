@@ -30,7 +30,9 @@ export function SearchHighlights({
     const spans = Array.from(el.querySelectorAll<HTMLElement>('.textLayer span')).filter(
       (s) => s.firstChild?.nodeType === Node.TEXT_NODE,
     );
-    const parts = spans.length
+    const spanTextLength = spans.reduce((sum, s) => sum + (s.textContent?.trim().length ?? 0), 0);
+    const useSpans = spans.length > 0 && !(items?.length && spanTextLength < 20);
+    const parts = useSpans
       ? spans.map((s) => s.textContent ?? '')
       : (items ?? []).map((i) => i.text);
     const matches = occurrences(parts.join(' '), query),
@@ -42,7 +44,7 @@ export function SearchHighlights({
         const start = Math.max(0, match.start - offset),
           end = Math.min(part.length, match.end - offset);
         if (end <= start) return;
-        if (spans.length) {
+        if (useSpans) {
           const range = document.createRange();
           range.setStart(spans[index].firstChild!, start);
           range.setEnd(spans[index].firstChild!, end);

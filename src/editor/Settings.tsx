@@ -3,26 +3,51 @@ import { version } from '../../package.json';
 import { FileOpeningControl } from '../components/FileOpeningControl';
 import { OpeningControl } from '../components/OpeningControl';
 import { useEffect, useState } from 'react';
-import { Sun, Moon, Monitor, ShieldCheck, KeyRound, Trash2, Check, Download } from 'lucide-react';
+import {
+  Sun,
+  Moon,
+  Monitor,
+  ShieldCheck,
+  KeyRound,
+  Trash2,
+  Check,
+  Download,
+  Lock,
+  Unlock,
+  UserRound,
+} from 'lucide-react';
 import { Button, SectionTitle } from '../components/ui';
-import type { Preferences } from '../types';
-import { setKey, getKey } from '../storage';
+import type { Preferences, UserProfile } from '../types';
+import { setKey, getKey, canPersist } from '../storage';
+import { disableVault, lockVault, setupVault, unlockVault } from '../storage/vault';
 import { allowEndpoint, localAvailability, prepareLocalModel } from '../ai';
 import { errorMessage } from '../utils/files';
+
+const emptyProfile: UserProfile = { name: '', email: '', phone: '', company: '' };
+
 export function Settings({
   prefs,
   update,
   clear,
   notify,
+  vaultEnabled,
+  vaultUnlocked,
+  onVaultChanged,
 }: {
   prefs: Preferences;
   update: (p: Preferences) => void;
   clear: () => void;
   notify: (text: string, error?: boolean) => void;
+  vaultEnabled: boolean;
+  vaultUnlocked: boolean;
+  onVaultChanged: () => Promise<void> | void;
 }) {
   const [key, setInputKey] = useState(''),
     [available, setAvailable] = useState('unavailable'),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [passphrase, setPassphrase] = useState(''),
+    [confirmPassphrase, setConfirmPassphrase] = useState(''),
+    [vaultBusy, setVaultBusy] = useState(false);
   useEffect(() => {
     void getKey().then(setInputKey);
     void localAvailability().then(setAvailable);
@@ -50,6 +75,61 @@ export function Settings({
       setBusy(false);
     }
   }
+  function updateProfile(field: keyof UserProfile, value: string) {
+    update({
+      ...prefs,
+      profile: { ...(prefs.profile ?? emptyProfile), [field]: value },
+    });
+  }
+  async function enableVault() {
+    if (passphrase !== confirmPassphrase) {
+      notify('Les deux phrases secrètes ne correspondent pas.', true);
+      return;
+    }
+    setVaultBusy(true);
+    try {
+      await setupVault(passphrase);
+      update({ ...prefs, vaultEnabled: true });
+      await onVaultChanged();
+      setPassphrase('');
+      setConfirmPassphrase('');
+      notify('Coffre local chiffré activé. Les données existantes ont été chiffrées.');
+    } catch (e) {
+      notify(errorMessage(e), true);
+    } finally {
+      setVaultBusy(false);
+    }
+  }
+  async function handleUnlock() {
+    setVaultBusy(true);
+    try {
+      await unlockVault(passphrase);
+      await onVaultChanged();
+      setPassphrase('');
+      notify('Coffre local déverrouillé pour cette session.');
+    } catch (e) {
+      notify(errorMessage(e), true);
+    } finally {
+      setVaultBusy(false);
+    }
+  }
+  async function handleDisableVault() {
+    setVaultBusy(true);
+    try {
+      await disableVault(vaultUnlocked ? undefined : passphrase);
+      update({ ...prefs, vaultEnabled: false });
+      await onVaultChanged();
+      setPassphrase('');
+      setConfirmPassphrase('');
+      notify('Coffre local désactivé. Les données enregistrées ont été déchiffrées.');
+    } catch (e) {
+      notify(errorMessage(e), true);
+    } finally {
+      setVaultBusy(false);
+    }
+  }
+  const profile = prefs.profile ?? emptyProfile;
+  const persisted = canPersist(prefs);
   return (
     <main className="settings content-page">
       <SectionTitle
@@ -124,6 +204,53 @@ export function Settings({
             <option value={3}>{t('216 dpi — haute qualité')}</option>
           </select>
         </label>
+      </section>
+      <section className="settings-section">
+        <h2>
+          <UserRound size={19} />
+          {t('Profil d’identité local')}
+        </h2>
+        <p className="muted">
+          {t(
+            'Coordonnées facultatives conservées uniquement sur cet appareil pour remplir en un clic vos formulaires et documents via « Remplir et signer ».',
+          )}
+        </p>
+        <div className="profile-grid">
+          <label className="field">
+            {t('Nom complet')}
+            <input
+              value={profile.name}
+              onChange={(e) => updateProfile('name', e.target.value)}
+              placeholder={t('Prénom Nom')}
+            />
+          </label>
+          <label className="field">
+            {t('Adresse e-mail')}
+            <input
+              type="email"
+              value={profile.email}
+              onChange={(e) => updateProfile('email', e.target.value)}
+              placeholder={t('nom@exemple.fr')}
+            />
+          </label>
+          <label className="field">
+            {t('Téléphone')}
+            <input
+              type="tel"
+              value={profile.phone}
+              onChange={(e) => updateProfile('phone', e.target.value)}
+              placeholder={t('+33 6 00 00 00 00')}
+            />
+          </label>
+          <label className="field">
+            {t('Organisation / entreprise')}
+            <input
+              value={profile.company}
+              onChange={(e) => updateProfile('company', e.target.value)}
+              placeholder={t('Facultatif')}
+            />
+          </label>
+        </div>
       </section>
       <section className="settings-section">
         <h2>
@@ -257,11 +384,59 @@ export function Settings({
           <ShieldCheck size={19} />
           {t('Vos données, vos règles')}
         </h2>
+        <div className="notice consent-status">
+          <p>
+            <strong>{t('Consentement au stockage local (IndexedDB) :')}</strong>{' '}
+            {prefs.storageConsent === 'accepted'
+              ? t('Autorisé')
+              : prefs.storageConsent === 'declined'
+                ? t('Refusé — édition et export sans enregistrement persistant')
+                : t('Non défini')}
+          </p>
+          <div className="row">
+            {persisted ? (
+              <Button
+                onClick={() =>
+                  update({
+                    ...prefs,
+                    storageConsent: 'declined',
+                    autoSave: false,
+                    remember: false,
+                  })
+                }
+              >
+                {t('Suspendre et refuser la sauvegarde locale')}
+              </Button>
+            ) : (
+              <Button
+                className="primary"
+                onClick={() =>
+                  update({
+                    ...prefs,
+                    storageConsent: 'accepted',
+                    autoSave: true,
+                    remember: true,
+                  })
+                }
+              >
+                {t('Autoriser la sauvegarde locale')}
+              </Button>
+            )}
+          </div>
+        </div>
         <label className="check-field">
           <input
             type="checkbox"
-            checked={prefs.autoSave}
-            onChange={(e) => update({ ...prefs, autoSave: e.target.checked })}
+            checked={persisted && prefs.autoSave}
+            onChange={(e) =>
+              update({
+                ...prefs,
+                storageConsent: e.target.checked
+                  ? 'accepted'
+                  : (prefs.storageConsent ?? 'declined'),
+                autoSave: e.target.checked,
+              })
+            }
           />
           {t('Sauvegarder automatiquement les brouillons sur cet appareil')}
         </label>
@@ -273,8 +448,16 @@ export function Settings({
         <label className="check-field">
           <input
             type="checkbox"
-            checked={prefs.remember}
-            onChange={(e) => update({ ...prefs, remember: e.target.checked })}
+            checked={persisted && prefs.remember}
+            onChange={(e) =>
+              update({
+                ...prefs,
+                storageConsent: e.target.checked
+                  ? 'accepted'
+                  : (prefs.storageConsent ?? 'declined'),
+                remember: e.target.checked,
+              })
+            }
           />{' '}
           {t('Conserver les fichiers récents et les échanges localement')}
         </label>
@@ -283,13 +466,103 @@ export function Settings({
             '10 documents récents maximum, jusqu’à 100 Mio au total. Les brouillons automatiques ont leur propre espace local. Aucun tracker ni envoi automatique.',
           )}
         </p>
+        <div className="vault-card">
+          <h3>
+            {vaultEnabled ? <Lock size={16} /> : <Unlock size={16} />}
+            {t('Coffre local chiffré (AES-GCM 256 bits)')}
+          </h3>
+          <p className="muted">
+            {t(
+              'Chiffre les brouillons, fichiers récents et conversations enregistrés dans IndexedDB à l’aide d’une clé dérivée (PBKDF2) de votre phrase secrète. La phrase secrète n’est jamais enregistrée ; son oubli rend ces données illisibles.',
+            )}
+          </p>
+          {!vaultEnabled ? (
+            <>
+              <div className="vault-fields">
+                <label className="field">
+                  {t('Phrase secrète du coffre')}
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={passphrase}
+                    onChange={(e) => setPassphrase(e.target.value)}
+                    placeholder={t('Au moins 4 caractères')}
+                  />
+                </label>
+                <label className="field">
+                  {t('Confirmer la phrase secrète')}
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={confirmPassphrase}
+                    onChange={(e) => setConfirmPassphrase(e.target.value)}
+                    placeholder={t('Répétez la phrase secrète')}
+                  />
+                </label>
+              </div>
+              <Button
+                disabled={vaultBusy || passphrase.length < 4}
+                onClick={() => void enableVault()}
+              >
+                <Lock size={16} />
+                {t('Activer le coffre chiffré')}
+              </Button>
+            </>
+          ) : !vaultUnlocked ? (
+            <>
+              <label className="field">
+                {t('Phrase secrète pour déverrouiller')}
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  value={passphrase}
+                  onChange={(e) => setPassphrase(e.target.value)}
+                  placeholder={t('Saisissez votre phrase secrète')}
+                />
+              </label>
+              <div className="row">
+                <Button
+                  className="primary"
+                  disabled={vaultBusy || !passphrase}
+                  onClick={() => void handleUnlock()}
+                >
+                  <Unlock size={16} />
+                  {t('Déverrouiller le coffre')}
+                </Button>
+                <Button
+                  disabled={vaultBusy || !passphrase}
+                  onClick={() => void handleDisableVault()}
+                >
+                  {t('Déchiffrer et désactiver')}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="row">
+              <Button
+                disabled={vaultBusy}
+                onClick={() => {
+                  lockVault();
+                  void onVaultChanged();
+                  notify('Coffre local verrouillé.');
+                }}
+              >
+                <Lock size={16} />
+                {t('Verrouiller le coffre')}
+              </Button>
+              <Button disabled={vaultBusy} onClick={() => void handleDisableVault()}>
+                {t('Désactiver et déchiffrer')}
+              </Button>
+            </div>
+          )}
+        </div>
         <Button className="danger" onClick={clear}>
           <Trash2 size={16} />
           {t('Effacer les données locales')}
         </Button>
         <p className="muted">
           {t(
-            'Cet effacement ne supprime pas les fichiers téléchargés, les copies du système ou les données déjà reçues par un fournisseur.',
+            'Cet effacement supprime récents, brouillons, échanges, profil local, configuration du coffre et clé API. Il ne supprime pas les fichiers téléchargés, les copies du système ou les données déjà reçues par un fournisseur.',
           )}
         </p>
       </section>

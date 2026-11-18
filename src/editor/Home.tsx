@@ -1,4 +1,5 @@
 import { t, getLocale } from '../i18n';
+import { useState } from 'react';
 import {
   FilePlus2,
   ArrowUpRight,
@@ -12,6 +13,8 @@ import {
   Star,
   Trash2,
   FileText,
+  LockKeyhole,
+  Unlock,
 } from 'lucide-react';
 import { Button, PrivacyBadge, SectionTitle, CardArrow, IconButton } from '../components/ui';
 import type { Recent } from '../storage';
@@ -59,6 +62,8 @@ export function Home({
   tool,
   favorites,
   toggleFavorite,
+  vaultLocked,
+  onUnlockVault,
 }: {
   drafts: DraftInfo[];
   resumeDraft: (id: string) => void;
@@ -71,7 +76,11 @@ export function Home({
   tool: (id: string) => void;
   favorites: string[];
   toggleFavorite: (id: string) => void;
+  vaultLocked?: boolean;
+  onUnlockVault?: (passphrase: string) => Promise<void>;
 }) {
+  const [passphrase, setPassphrase] = useState('');
+  const [unlocking, setUnlocking] = useState(false);
   return (
     <main className="dashboard">
       <SectionTitle
@@ -80,6 +89,48 @@ export function Home({
         description={t('Tout ce dont vous avez besoin. Rien de superflu.')}
         action={<PrivacyBadge />}
       />
+      {vaultLocked && onUnlockVault && (
+        <section className="vault-unlock-banner" aria-label={t('Coffre local verrouillé')}>
+          <div>
+            <strong>
+              <LockKeyhole size={16} />
+              {t('Coffre local chiffré verrouillé')}
+            </strong>
+            <small>
+              {t(
+                'Saisissez votre phrase secrète pour afficher vos brouillons et documents récents.',
+              )}
+            </small>
+          </div>
+          <form
+            className="row"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!passphrase) return;
+              setUnlocking(true);
+              try {
+                await onUnlockVault(passphrase);
+                setPassphrase('');
+              } finally {
+                setUnlocking(false);
+              }
+            }}
+          >
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={passphrase}
+              onChange={(e) => setPassphrase(e.target.value)}
+              placeholder={t('Phrase secrète')}
+              aria-label={t('Phrase secrète')}
+            />
+            <Button className="primary" type="submit" disabled={unlocking || !passphrase}>
+              <Unlock size={15} />
+              {t('Déverrouiller')}
+            </Button>
+          </form>
+        </section>
+      )}
       {drafts.length > 0 && (
         <section className="draft-recovery" aria-label={t('Brouillons à reprendre')}>
           <div>

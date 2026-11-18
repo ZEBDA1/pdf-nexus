@@ -9,7 +9,7 @@ import {
   PDFRef,
   PDFStream,
 } from 'pdf-lib';
-import { unzlibSync } from 'fflate';
+import { unzlibSync, zlibSync } from 'fflate';
 
 export type PixelKind = 'jpeg' | 'rgb' | 'gray';
 
@@ -20,6 +20,7 @@ export interface EncodeInput {
   height: number;
   scale: number;
   quality: number;
+  grayscale?: boolean;
 }
 
 export type ImageEncoder = (
@@ -33,6 +34,12 @@ export interface CompressOptions {
   quality: number;
   /** Dimension maximale (px) au-delà de laquelle les images sont réduites. */
   maxDimension?: number;
+  /** Convertit les images couleur en niveaux de gris avant encodage. */
+  grayscale?: boolean;
+  /** Supprime les métadonnées Info/XMP (vrai par défaut). */
+  stripMetadata?: boolean;
+  /** Progression (0 à 1). */
+  onProgress?: (n: number) => void;
   encode: ImageEncoder;
 }
 
@@ -163,25 +170,129 @@ export function removeThumbnails(doc: PDFDocument) {
   for (const page of doc.getPages()) page.node.delete(N('Thumb'));
 }
 
+function resolveColorSpace(dict: PDFDict): 'DeviceRGB' | 'DeviceGray' | 'DeviceCMYK' | null {
+  const cs = dict.lookup(N('ColorSpace'));
+  const direct = nameOf(cs);
+  if (direct === 'DeviceRGB' || direct === 'DeviceGray' || direct === 'DeviceCMYK') return direct;
+  if (cs instanceof PDFArray && cs.size() >= 2 && nameOf(cs.lookup(0)) === 'ICCBased') {
+    const profile = cs.lookup(1);
+    if (profile instanceof PDFStream) {
+      const n = numberOf(profile.dict.lookup(N('N')));
+      if (n === 1) return 'DeviceGray';
+      if (n === 3) return 'DeviceRGB';
+      if (n === 4) return 'DeviceCMYK';
+    }
+  }
+  return null;
+}
+
+function paeth(a: number, b: number, c: number): number {
+  const p = a + b - c;
+  const pa = Math.abs(p - a);
+  const pb = Math.abs(p - b);
+  const pc = Math.abs(p - c);
+  if (pa <= pb && pa <= pc) return a;
+  if (pb <= pc) return b;
+  return c;
+}
+
+export function unfilterPredictor(
+  raw: Uint8Array,
+  width: number,
+  height: number,
+  colors: number,
+  predictor: number,
+): Uint8Array | null {
+  if (predictor <= 1) return raw;
+  const rowBytes = width * colors;
+  if (predictor === 2) {
+    if (raw.length < rowBytes * height) return null;
+    const out = new Uint8Array(rowBytes * height);
+    for (let y = 0; y < height; y++) {
+      const base = y * rowBytes;
+      for (let x = 0; x < rowBytes; x++) {
+        const left = x >= colors ? out[base + x - colors] : 0;
+        out[base + x] = (raw[base + x] + left) & 0xff;
+      }
+    }
+    return out;
+  }
+  if (predictor >= 10 && predictor <= 15) {
+    const stride = rowBytes + 1;
+    if (raw.length < stride * height) return null;
+    const out = new Uint8Array(rowBytes * height);
+    for (let y = 0; y < height; y++) {
+      const src = y * stride;
+      const dst = y * rowBytes;
+      const filter = raw[src];
+      for (let x = 0; x < rowBytes; x++) {
+        const val = raw[src + 1 + x];
+        const a = x >= colors ? out[dst + x - colors] : 0;
+        const b = y > 0 ? out[dst - rowBytes + x] : 0;
+        const c = y > 0 && x >= colors ? out[dst - rowBytes + x - colors] : 0;
+        if (filter === 0) out[dst + x] = val;
+        else if (filter === 1) out[dst + x] = (val + a) & 0xff;
+        else if (filter === 2) out[dst + x] = (val + b) & 0xff;
+        else if (filter === 3) out[dst + x] = (val + ((a + b) >> 1)) & 0xff;
+        else if (filter === 4) out[dst + x] = (val + paeth(a, b, c)) & 0xff;
+        else return null;
+      }
+    }
+    return out;
+  }
+  return null;
+}
+
+function cmykToRgb(cmyk: Uint8Array, pixelCount: number): Uint8Array {
+  const rgb = new Uint8Array(pixelCount * 3);
+  for (let i = 0; i < pixelCount; i++) {
+    const c = cmyk[i * 4] / 255;
+    const m = cmyk[i * 4 + 1] / 255;
+    const y = cmyk[i * 4 + 2] / 255;
+    const k = cmyk[i * 4 + 3] / 255;
+    rgb[i * 3] = Math.round(255 * (1 - c) * (1 - k));
+    rgb[i * 3 + 1] = Math.round(255 * (1 - m) * (1 - k));
+    rgb[i * 3 + 2] = Math.round(255 * (1 - y) * (1 - k));
+  }
+  return rgb;
+}
+
 function imageKind(
   dict: PDFDict,
   contents: Uint8Array,
 ): { kind: PixelKind; data: Uint8Array } | null {
   const filter = nameOf(dict.lookup(N('Filter')));
-  const space = nameOf(dict.lookup(N('ColorSpace')));
+  const space = resolveColorSpace(dict);
   if (dict.has(N('Decode')) || dict.has(N('Mask')) || dict.has(N('ImageMask'))) return null;
   if (filter === 'DCTDecode') {
-    if (space !== 'DeviceRGB' || dict.has(N('DecodeParms'))) return null;
+    if ((space !== 'DeviceRGB' && space !== 'DeviceGray') || dict.has(N('DecodeParms')))
+      return null;
     return { kind: 'jpeg', data: contents };
   }
   if (filter === 'FlateDecode') {
     if (numberOf(dict.lookup(N('BitsPerComponent'))) !== 8) return null;
-    if (space !== 'DeviceRGB' && space !== 'DeviceGray') return null;
+    if (!space) return null;
+    const width = numberOf(dict.lookup(N('Width')));
+    const height = numberOf(dict.lookup(N('Height')));
+    if (!width || !height) return null;
     const parms = dict.lookup(N('DecodeParms'));
-    if (parms instanceof PDFDict && numberOf(parms.lookup(N('Predictor'))) > 1) return null;
     if (parms && !(parms instanceof PDFDict)) return null;
+    const predictor = parms instanceof PDFDict ? numberOf(parms.lookup(N('Predictor'))) : 1;
+    const colors = space === 'DeviceRGB' ? 3 : space === 'DeviceCMYK' ? 4 : 1;
+    if (parms instanceof PDFDict) {
+      const parmColors = numberOf(parms.lookup(N('Colors')));
+      const parmBpc = numberOf(parms.lookup(N('BitsPerComponent')));
+      const parmCols = numberOf(parms.lookup(N('Columns')));
+      if (parmColors && parmColors !== colors) return null;
+      if (parmBpc && parmBpc !== 8) return null;
+      if (parmCols && parmCols !== width) return null;
+    }
     try {
-      return { kind: space === 'DeviceRGB' ? 'rgb' : 'gray', data: unzlibSync(contents) };
+      const inflated = unzlibSync(contents);
+      const pixels = unfilterPredictor(inflated, width, height, colors, predictor);
+      if (!pixels || pixels.length < width * height * colors) return null;
+      if (space === 'DeviceCMYK') return { kind: 'rgb', data: cmykToRgb(pixels, width * height) };
+      return { kind: space === 'DeviceRGB' ? 'rgb' : 'gray', data: pixels };
     } catch {
       return null;
     }
@@ -189,9 +300,28 @@ function imageKind(
   return null;
 }
 
+function resampleGray(
+  src: Uint8Array,
+  srcW: number,
+  srcH: number,
+  dstW: number,
+  dstH: number,
+): Uint8Array {
+  const out = new Uint8Array(dstW * dstH);
+  for (let y = 0; y < dstH; y++) {
+    const sy = Math.min(srcH - 1, Math.floor((y * srcH) / dstH));
+    for (let x = 0; x < dstW; x++) {
+      const sx = Math.min(srcW - 1, Math.floor((x * srcW) / dstW));
+      out[y * dstW + x] = src[sy * srcW + sx];
+    }
+  }
+  return out;
+}
+
 /**
- * Recompresse localement les images intégrées (JPEG RVB, Flate RVB/gris, réduction
- * des très grandes images), retire vignettes, objets orphelins et métadonnées.
+ * Recompresse localement les images intégrées (JPEG RVB/gris, Flate RVB/gris/CMJN
+ * avec ou sans prédicteur PNG/TIFF, gestion des masques SMask, profils ICCBased,
+ * mode niveaux de gris), retire vignettes, objets orphelins et métadonnées.
  * Texte, liens et formulaires sont conservés. Le résultat n'est jamais plus gros
  * que l'original.
  */
@@ -201,37 +331,84 @@ export async function compressPdfImages(
   signal?: AbortSignal,
 ): Promise<CompressResult> {
   const doc = await PDFDocument.load(input, { updateMetadata: false });
+  const entries = [...doc.context.enumerateIndirectObjects()].filter(
+    (entry): entry is [PDFRef, PDFRawStream] =>
+      entry[0] instanceof PDFRef &&
+      entry[1] instanceof PDFRawStream &&
+      nameOf(entry[1].dict.lookup(N('Subtype'))) === 'Image',
+  );
+  const smaskRefs = new Set<string>();
+  for (const [, obj] of entries) {
+    const smask = obj.dict.get(N('SMask'));
+    if (smask instanceof PDFRef) smaskRefs.add(smask.toString());
+  }
   let images = 0;
   let recompressed = 0;
-  for (const [ref, obj] of doc.context.enumerateIndirectObjects()) {
+  for (let i = 0; i < entries.length; i++) {
+    const [ref, obj] = entries[i];
     abortIf(signal);
-    if (!(ref instanceof PDFRef) || !(obj instanceof PDFRawStream)) continue;
+    if (smaskRefs.has(ref.toString())) continue;
     const dict = obj.dict;
-    if (nameOf(dict.lookup(N('Subtype'))) !== 'Image') continue;
     images++;
     const pixels = imageKind(dict, obj.contents);
-    if (!pixels) continue;
+    if (!pixels) {
+      options.onProgress?.(((i + 1) / Math.max(1, entries.length)) * 0.9);
+      continue;
+    }
     const width = numberOf(dict.lookup(N('Width')));
     const height = numberOf(dict.lookup(N('Height')));
     if (!width || !height) continue;
-    if (
-      pixels.kind !== 'jpeg' &&
-      pixels.data.length < width * height * (pixels.kind === 'rgb' ? 3 : 1)
-    )
-      continue;
     let scale = options.scale;
     if (options.maxDimension)
       scale = Math.min(scale, options.maxDimension / Math.max(width, height));
+    scale = Math.min(1, scale);
+
+    const smaskVal = dict.get(N('SMask'));
+    const smaskStream = smaskVal instanceof PDFRef ? doc.context.lookup(smaskVal) : smaskVal;
+    let smaskGray: Uint8Array | null = null;
+    if (dict.has(N('SMask'))) {
+      if (smaskStream instanceof PDFRawStream) {
+        const smaskPixels = imageKind(smaskStream.dict, smaskStream.contents);
+        const sw = numberOf(smaskStream.dict.lookup(N('Width')));
+        const sh = numberOf(smaskStream.dict.lookup(N('Height')));
+        if (smaskPixels?.kind === 'gray' && sw === width && sh === height)
+          smaskGray = smaskPixels.data;
+        else scale = 1;
+      } else {
+        scale = 1;
+      }
+    }
+
     const next = await options.encode({
       kind: pixels.kind,
       data: pixels.data,
       width,
       height,
-      scale: Math.min(1, scale),
+      scale,
       quality: options.quality,
+      grayscale: options.grayscale,
     });
-    if (!next || next.bytes.length >= obj.contents.length) continue;
+    if (!next || next.bytes.length >= obj.contents.length) {
+      options.onProgress?.(((i + 1) / Math.max(1, entries.length)) * 0.9);
+      continue;
+    }
     const copy = dict.clone(doc.context);
+    if (dict.has(N('SMask')) && (next.width !== width || next.height !== height)) {
+      if (!smaskGray || !(smaskStream instanceof PDFRawStream)) continue;
+      const scaledMask = zlibSync(resampleGray(smaskGray, width, height, next.width, next.height), {
+        level: 6,
+      });
+      const maskDict = smaskStream.dict.clone(doc.context);
+      maskDict.set(N('Filter'), N('FlateDecode'));
+      maskDict.set(N('ColorSpace'), N('DeviceGray'));
+      maskDict.set(N('BitsPerComponent'), PDFNumber.of(8));
+      maskDict.delete(N('DecodeParms'));
+      maskDict.set(N('Width'), PDFNumber.of(next.width));
+      maskDict.set(N('Height'), PDFNumber.of(next.height));
+      maskDict.set(N('Length'), PDFNumber.of(scaledMask.length));
+      const newMaskRef = doc.context.register(PDFRawStream.of(maskDict, scaledMask));
+      copy.set(N('SMask'), newMaskRef);
+    }
     copy.set(N('Filter'), N('DCTDecode'));
     copy.set(N('ColorSpace'), N('DeviceRGB'));
     copy.set(N('BitsPerComponent'), PDFNumber.of(8));
@@ -241,17 +418,23 @@ export async function compressPdfImages(
     copy.set(N('Length'), PDFNumber.of(next.bytes.length));
     doc.context.assign(ref, PDFRawStream.of(copy, next.bytes));
     recompressed++;
+    options.onProgress?.(((i + 1) / Math.max(1, entries.length)) * 0.9);
   }
   removeThumbnails(doc);
   mergeDuplicateStreams(doc);
   const removed = removeOrphans(doc);
-  doc.setTitle('');
-  doc.setAuthor('');
-  doc.setSubject('');
-  doc.setKeywords([]);
-  doc.setProducer('');
-  doc.setCreator('');
+  if (options.stripMetadata !== false) {
+    doc.setTitle('');
+    doc.setAuthor('');
+    doc.setSubject('');
+    doc.setKeywords([]);
+    doc.setProducer('');
+    doc.setCreator('');
+    doc.catalog.delete(N('Metadata'));
+    doc.context.trailerInfo.Info = undefined;
+  }
   const saved = await doc.save({ useObjectStreams: true, updateFieldAppearances: false });
+  options.onProgress?.(1);
   return saved.length < input.length
     ? { bytes: saved, images, recompressed, removed }
     : { bytes: input, images, recompressed: 0, removed: 0 };
@@ -277,16 +460,29 @@ export async function compressToTarget(
     [0.25, 0.3],
   ];
   let best: CompressResult | undefined;
-  for (const [scale, quality] of steps) {
+  for (let i = 0; i < steps.length; i++) {
+    const [scale, quality] = steps[i];
     abortIf(signal);
-    const result = await compressPdfImages(input, { ...base, scale, quality }, signal);
+    const result = await compressPdfImages(
+      input,
+      {
+        ...base,
+        scale,
+        quality,
+        onProgress: (n) => base.onProgress?.((i + n) / steps.length),
+      },
+      signal,
+    );
     if (!best || result.bytes.length < best.bytes.length) best = result;
-    if (result.bytes.length <= targetBytes) return { ...result, reached: true };
+    if (result.bytes.length <= targetBytes) {
+      base.onProgress?.(1);
+      return { ...result, reached: true };
+    }
   }
   return { ...(best as CompressResult), reached: false };
 }
 
-/** Encodeur navigateur : décodage, redimensionnement et JPEG, 100 % local. */
+/** Encodeur navigateur : décodage, redimensionnement et JPEG, 100 % local (compatible Worker). */
 export const browserImageEncoder: ImageEncoder = async ({
   kind,
   data,
@@ -294,6 +490,7 @@ export const browserImageEncoder: ImageEncoder = async ({
   height,
   scale,
   quality,
+  grayscale,
 }) => {
   const w = Math.max(1, Math.round(width * scale));
   const h = Math.max(1, Math.round(height * scale));
@@ -319,6 +516,15 @@ export const browserImageEncoder: ImageEncoder = async ({
   }
   try {
     ctx.drawImage(bitmap, 0, 0, w, h);
+    if (grayscale) {
+      const img = ctx.getImageData(0, 0, w, h);
+      const px = img.data;
+      for (let i = 0; i < px.length; i += 4) {
+        const l = Math.round(0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]);
+        px[i] = px[i + 1] = px[i + 2] = l;
+      }
+      ctx.putImageData(img, 0, 0);
+    }
     const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality });
     return { bytes: new Uint8Array(await blob.arrayBuffer()), width: w, height: h };
   } finally {

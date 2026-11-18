@@ -114,12 +114,10 @@ export class FormBuilder {
         else {
           const f =
             field instanceof PDFDropdown ? form.createDropdown(name) : form.createOptionList(name);
-          const options = field.acroField
-            .getOptions()
-            .map((o) => ({
-              value: o.value.decodeText(),
-              display: (o.display ?? o.value).decodeText(),
-            }));
+          const options = field.acroField.getOptions().map((o) => ({
+            value: o.value.decodeText(),
+            display: (o.display ?? o.value).decodeText(),
+          }));
           f.setOptions(options.map((o) => o.display));
           if (field.isMultiselect()) f.enableMultiselect();
           const values = (

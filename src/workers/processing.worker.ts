@@ -6,6 +6,8 @@ import type { OutputFile } from '../types';
 import { setLanguage } from '../i18n';
 import { restoreEditableSource } from '../pdf/editable';
 import { previewReplacement } from '../pdf/replace';
+import { browserImageEncoder, compressPdfImages, compressToTarget } from '../pdf/compress';
+
 self.onmessage = async ({
   data: request,
 }: {
@@ -13,6 +15,28 @@ self.onmessage = async ({
 }) => {
   setLanguage(request.language === 'en' ? 'en' : 'fr');
   try {
+    if (request.kind === 'compress') {
+      const { options, bytes } = request;
+      const base = {
+        maxDimension: options.maxDimension,
+        grayscale: options.grayscale,
+        stripMetadata: options.stripMetadata,
+        encode: browserImageEncoder,
+        onProgress: (n: number) => self.postMessage({ progress: n }),
+      };
+      const result =
+        options.targetBytes && options.targetBytes > 0
+          ? await compressToTarget(bytes, options.targetBytes, base)
+          : await compressPdfImages(bytes, {
+              ...base,
+              scale: options.scale,
+              quality: options.quality,
+            });
+      (
+        self as unknown as { postMessage: (message: unknown, transfer: ArrayBuffer[]) => void }
+      ).postMessage({ result }, [result.bytes.buffer as ArrayBuffer]);
+      return;
+    }
     if (request.kind === 'replace') {
       const result = await previewReplacement(
         request.source.bytes,

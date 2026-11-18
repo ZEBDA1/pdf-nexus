@@ -48,4 +48,3 @@ Core features run on your device. PDF Nexus includes no ads or analytics and req
 ### Note facultative pour l'équipe d'examen
 
 Nous avons supprimé l'énumération de formats signalée ainsi que les formulations assimilables à une liste de mots-clés. La nouvelle description présente l'objectif unique de l'extension dans un texte naturel et précise les limites des fonctions concernées.
-

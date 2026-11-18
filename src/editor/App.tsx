@@ -53,6 +53,7 @@ import {
   type PageText,
   type Source,
   type OutputFile,
+  type TextItem,
 } from '../types';
 import {
   getPreferences,
@@ -63,8 +64,10 @@ import {
   removeRecent,
   clearData,
   documentId,
+  canPersist,
   type Recent,
 } from '../storage';
+import { isVaultEnabled, isVaultUnlocked, unlockVault } from '../storage/vault';
 import {
   readFile,
   uid,
@@ -75,10 +78,12 @@ import {
   checkAbort,
 } from '../utils/files';
 import { loadPdf, extractPage, renderRaster, canvasBytes } from '../pdf/reader';
+import { deskewCanvas } from '../pdf/deskew';
 import { History } from '../pdf/history';
 import { CompressPanel } from './CompressPanel';
 import { PdfToolsPanel } from './PdfToolsPanel';
 import { ComparePanel } from './ComparePanel';
+import { CommandPalette, type CommandItem } from './CommandPalette';
 import { processJob, restoreSource, getFont, type RasterPage } from '../workers/client';
 import type { RestoredSource } from '../pdf/editable';
 import { recognize } from '../ocr';
@@ -97,6 +102,11 @@ export function App() {
   const [drafts, setDrafts] = useState<DraftInfo[]>([]),
     [draftId, setDraftId] = useState<string>(uid),
     [recovered, setRecovered] = useState(false);
+  const [vaultEnabled, setVaultEnabled] = useState(false),
+    [vaultUnlocked, setVaultUnlocked] = useState(false),
+    [paletteOpen, setPaletteOpen] = useState(false),
+    [openReplaceKey, setOpenReplaceKey] = useState(0),
+    [openObjectsKey, setOpenObjectsKey] = useState(0);
   const [view, setView] = useState<View>(
     ['settings', 'convert', 'tools'].includes(location.hash.slice(1))
       ? (location.hash.slice(1) as View)
@@ -146,7 +156,7 @@ export function App() {
     current,
     zoom,
     documentId: docId,
-    enabled: prefs.autoSave && prefsReady,
+    enabled: canPersist(prefs) && prefs.autoSave && prefsReady && (!vaultEnabled || vaultUnlocked),
     recovered,
     saved: () => {
       void listDrafts()
@@ -159,6 +169,19 @@ export function App() {
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(undefined), error ? 10000 : 6000);
   }
+  async function refreshVaultState() {
+    const enabled = await isVaultEnabled();
+    const unlocked = isVaultUnlocked();
+    setVaultEnabled(enabled);
+    setVaultUnlocked(unlocked);
+    if (!enabled || unlocked) {
+      setRecent(await listRecent());
+      setDrafts(await listDrafts());
+    } else {
+      setRecent([]);
+      setDrafts([]);
+    }
+  }
   useEffect(() => {
     void getPreferences()
       .then((p) => {
@@ -167,6 +190,12 @@ export function App() {
         setPrefsReady(true);
       })
       .catch(() => notify('Impossible de lire les préférences.', true));
+    void isVaultEnabled()
+      .then((enabled) => {
+        setVaultEnabled(enabled);
+        setVaultUnlocked(isVaultUnlocked());
+      })
+      .catch(() => {});
     void listRecent()
       .then(setRecent)
       .catch(() => notify('Le stockage local est indisponible.', true));
@@ -193,6 +222,8 @@ export function App() {
   useEffect(() => {
     const before = (e: BeforeUnloadEvent) => {
       if (
+        canPersist(prefs) &&
+        prefs.autoSave &&
         (history.current.past.length || history.current.future.length) &&
         autosave.status.kind !== 'saved'
       ) {
@@ -202,7 +233,7 @@ export function App() {
     };
     window.addEventListener('beforeunload', before);
     return () => window.removeEventListener('beforeunload', before);
-  }, [workspace, autosave.status.kind]);
+  }, [workspace, autosave.status.kind, prefs]);
   async function updatePrefs(p: Preferences) {
     setPrefs(p);
     try {
@@ -311,6 +342,7 @@ export function App() {
             ...a,
             id: uid(),
           })),
+          ocr: prepared[source].ocr?.[index],
         })),
       );
       setWorkspace({
@@ -330,7 +362,12 @@ export function App() {
         );
       const id = await documentId(sources[0].bytes);
       setDocId(id);
-      if (prefs.remember && sources.length === 1) {
+      if (
+        canPersist(prefs) &&
+        prefs.remember &&
+        (!vaultEnabled || vaultUnlocked) &&
+        sources.length === 1
+      ) {
         try {
           await remember(sources[0], pages.length, id);
           await refreshRecent();
@@ -451,6 +488,7 @@ export function App() {
             rotation: 0,
             formGroup: formGroups[s],
             annotations: (prepared[s].annotations[index] ?? []).map((a) => ({ ...a, id: uid() })),
+            ocr: prepared[s].ocr?.[index],
           })),
         );
         if (workspace.pages.length + refs.length > 1000) throw new Error('Limite de 1 000 pages.');
@@ -686,7 +724,7 @@ export function App() {
     for (let i = 0; i < workspace.pages.length; i++) {
       checkAbort(signal);
       const ref = workspace.pages[i],
-        key = `${ref.source}:${ref.index}${ref.nativeEdits?.length ? ':' + JSON.stringify(ref.nativeEdits) : ''}`;
+        key = `${ref.source}:${ref.index}${ref.nativeEdits?.length ? ':' + JSON.stringify(ref.nativeEdits) : ''}${ref.ocr ? ':ocr' : ''}`;
       let extracted = cache.current.get(key);
       if (!extracted) {
         if (ref.nativeEdits?.length) {
@@ -705,7 +743,17 @@ export function App() {
           } finally {
             await preview.loadingTask.destroy();
           }
-        } else extracted = await extractPage(docs[ref.source], ref.index);
+        } else {
+          extracted = await extractPage(docs[ref.source], ref.index);
+          if (extracted.text.trim().length < 20 && ref.ocr?.text) {
+            extracted = {
+              ...extracted,
+              text: ref.ocr.text,
+              items: ref.ocr.items,
+              ocr: true,
+            };
+          }
+        }
         cache.current.set(key, extracted);
       }
       const corrections = ref.annotations
@@ -842,6 +890,7 @@ export function App() {
     void run('Reconnaissance OCR locale', async (signal, progress) => {
       if (!workspace) return;
       const indices = parsePages(range, workspace.pages.length);
+      const ocrResults = new Map<string, { text: string; items: TextItem[] }>();
       let processed = 0;
       for (let j = 0; j < indices.length; j++) {
         checkAbort(signal);
@@ -852,10 +901,24 @@ export function App() {
           const result = await recognize(docs[ref.source], ref.index, ocrLanguage, signal, (n) =>
             progress((j + n) / indices.length),
           );
-          cache.current.set(key, result);
+          cache.current.set(`${key}:ocr`, result);
+          ocrResults.set(ref.id, { text: result.text, items: result.items });
           processed++;
         } else cache.current.set(key, native);
         progress((j + 1) / indices.length);
+      }
+      if (ocrResults.size) {
+        setWorkspace((w) =>
+          w
+            ? {
+                ...w,
+                pages: w.pages.map((p) => {
+                  const layer = ocrResults.get(p.id);
+                  return layer ? { ...p, ocr: layer } : p;
+                }),
+              }
+            : w,
+        );
       }
       notify(
         processed
@@ -863,6 +926,62 @@ export function App() {
               count: processed,
             })
           : 'Les pages sélectionnées disposent déjà de texte exploitable.',
+      );
+    });
+  }
+  function deskewScans() {
+    if (!workspace || workspace.encrypted) return;
+    void run('Redressement des scans', async (signal, progress) => {
+      const source = await currentSource(signal);
+      const doc = await loadPdf(source.bytes, undefined, signal);
+      const raster: RasterPage[] = [];
+      let adjusted = 0;
+      try {
+        for (let i = 0; i < doc.numPages; i++) {
+          checkAbort(signal);
+          const { canvas, page } = await renderRaster(doc, i, 2, undefined, signal);
+          const v = page.getViewport({ scale: 1 });
+          const { canvas: deskewed, angle } = deskewCanvas(canvas);
+          if (angle !== 0) adjusted++;
+          try {
+            raster.push({
+              bytes: await canvasBytes(deskewed, 'jpg', 0.92),
+              width: v.width,
+              height: v.height,
+              format: 'jpg',
+            });
+          } finally {
+            canvas.width = 0;
+            canvas.height = 0;
+            if (deskewed !== canvas) {
+              deskewed.width = 0;
+              deskewed.height = 0;
+            }
+          }
+          progress(((i + 1) / doc.numPages) * 0.85);
+        }
+      } finally {
+        await doc.loadingTask.destroy();
+      }
+      if (!adjusted) {
+        notify('Les pages semblent déjà droites : aucune correction nécessaire.');
+        return;
+      }
+      const [f] = await processJob(
+        {
+          kind: 'rasterPdf',
+          pages: raster,
+          font: await getFont(),
+          name: `${workspace.name.replace(/\.pdf$/i, '')}-redresse.pdf`,
+        },
+        signal,
+      );
+      progress(1);
+      await openSources([{ name: f.name, bytes: f.bytes }], signal);
+      notify(
+        t('{count} page(s) redressée(s) et chargée(s) dans l’éditeur.', {
+          count: adjusted,
+        }),
       );
     });
   }
@@ -1023,7 +1142,7 @@ export function App() {
     if (
       !window.confirm(
         t(
-          'Effacer les récents, tous les brouillons enregistrés, les conversations et la clé API, puis fermer le document actuel ? Les fichiers téléchargés sont conservés.',
+          'Effacer les récents, tous les brouillons enregistrés, les conversations, le profil local, le coffre et la clé API, puis fermer le document actuel ? Les fichiers téléchargés sont conservés.',
         ),
       )
     )
@@ -1035,6 +1154,9 @@ export function App() {
       clipboard.current = [];
       setCanPaste(false);
       await clearData();
+      setVaultEnabled(false);
+      setVaultUnlocked(false);
+      await updatePrefs({ ...prefs, vaultEnabled: false, profile: undefined });
       setRecent([]);
       setWorkspace(undefined);
       setDocs([]);
@@ -1048,6 +1170,12 @@ export function App() {
   }
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        if (setup || exportSnapshot) return;
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+        return;
+      }
       if ((e.target as Element)?.closest('[aria-modal="true"]')) return;
       const editable = (e.target as HTMLElement)?.closest(
         'input,textarea,select,[contenteditable]',
@@ -1077,13 +1205,95 @@ export function App() {
       } else if (e.key === 'Delete' && !editable && selected) removeAnnotation();
       else if (e.key === 'Escape') {
         setModal(null);
+        setPaletteOpen(false);
         setTool('select');
       }
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [workspace, selectedIds, prefs, current]);
+  }, [workspace, selectedIds, prefs, current, setup, exportSnapshot]);
   const locked = workspace?.encrypted ?? false;
+  const paletteItems: CommandItem[] = [
+    { id: 'open', label: 'Ouvrir un PDF', shortcut: 'Ctrl O', action: open },
+    {
+      id: 'export',
+      label: 'Exporter le PDF',
+      shortcut: 'Ctrl S',
+      disabled: !workspace || locked,
+      action: exportPdf,
+    },
+    {
+      id: 'tools',
+      label: 'Outils du document & compression',
+      disabled: !workspace,
+      action: () => setModal('tools'),
+    },
+    {
+      id: 'ocr',
+      label: 'Reconnaissance OCR locale',
+      disabled: !workspace,
+      action: ocr,
+    },
+    {
+      id: 'deskew',
+      label: 'Redresser les scans',
+      disabled: !workspace || locked,
+      action: deskewScans,
+    },
+    {
+      id: 'replace',
+      label: 'Rechercher et remplacer du texte',
+      disabled: !workspace || locked,
+      action: () => {
+        setView('editor');
+        setOpenReplaceKey((k) => k + 1);
+      },
+    },
+    {
+      id: 'objects',
+      label: 'Panneau des objets',
+      disabled: !workspace,
+      action: () => {
+        setView('editor');
+        setOpenObjectsKey((k) => k + 1);
+      },
+    },
+    {
+      id: 'night',
+      label: 'Mode lecture nuit',
+      hint: prefs.nightReading
+        ? 'Désactiver le filtre sombre sur les pages'
+        : 'Inverser la luminosité des pages à l’écran',
+      action: () => void updatePrefs({ ...prefs, nightReading: !prefs.nightReading }),
+    },
+    {
+      id: 'undo',
+      label: 'Annuler',
+      shortcut: 'Ctrl Z',
+      disabled: !workspace || !history.current.past.length,
+      action: undo,
+    },
+    {
+      id: 'redo',
+      label: 'Rétablir',
+      shortcut: 'Ctrl Shift Z',
+      disabled: !workspace || !history.current.future.length,
+      action: redo,
+    },
+    { id: 'ai', label: 'Assistant IA', action: () => navigate('ai') },
+    { id: 'convert', label: 'Convertisseur', action: () => setView('convert') },
+    { id: 'home', label: 'Tableau de bord', action: () => setView('home') },
+    { id: 'settings', label: 'Paramètres', action: () => setView('settings') },
+    {
+      id: 'theme',
+      label: 'Changer le thème',
+      action: () =>
+        void updatePrefs({
+          ...prefs,
+          theme: document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark',
+        }),
+    },
+  ];
   const toolsContent = (
     <div className="document-tools">
       <p className="notice">
@@ -1167,6 +1377,9 @@ export function App() {
         <Button disabled={locked} onClick={() => compress(true)}>
           {t('PDF recherchable')}
         </Button>
+        <Button disabled={locked} onClick={deskewScans}>
+          {t('Redresser les scans')}
+        </Button>
       </div>
       <small className="muted">
         {t(
@@ -1203,8 +1416,8 @@ export function App() {
         <Setup
           prefs={prefs}
           update={(p) => void updatePrefs(p)}
-          finish={() => {
-            void updatePrefs({ ...prefs, setupCompleted: true });
+          finish={(finalPrefs) => {
+            void updatePrefs(finalPrefs);
             setSetup(false);
             if (location.hash === '#setup')
               window.history.replaceState(null, '', location.pathname);
@@ -1324,6 +1537,49 @@ export function App() {
         </div>
       </aside>
       <div className="main-area">
+        {prefsReady && !setup && prefs.setupCompleted && prefs.storageConsent === undefined && (
+          <div
+            className="consent-banner"
+            role="region"
+            aria-label={t('Consentement au stockage local')}
+          >
+            <div>
+              <strong>{t('Stockage local sur cet appareil')}</strong>
+              <p>
+                {t(
+                  'Par défaut, PDF Nexus n’enregistre ni vos brouillons ni vos fichiers récents. Souhaitez-vous activer la sauvegarde locale sur cet appareil ?',
+                )}
+              </p>
+            </div>
+            <div className="row">
+              <Button
+                onClick={() =>
+                  void updatePrefs({
+                    ...prefs,
+                    storageConsent: 'declined',
+                    autoSave: false,
+                    remember: false,
+                  })
+                }
+              >
+                {t('Refuser (session uniquement)')}
+              </Button>
+              <Button
+                className="primary"
+                onClick={() =>
+                  void updatePrefs({
+                    ...prefs,
+                    storageConsent: 'accepted',
+                    autoSave: true,
+                    remember: true,
+                  })
+                }
+              >
+                {t('Autoriser la sauvegarde locale')}
+              </Button>
+            </div>
+          </div>
+        )}
         {view !== 'editor' && (
           <header className="app-topbar">
             <div>
@@ -1377,6 +1633,16 @@ export function App() {
                   : [...prefs.favorites, id],
               })
             }
+            vaultLocked={vaultEnabled && !vaultUnlocked}
+            onUnlockVault={async (pw) => {
+              try {
+                await unlockVault(pw);
+                await refreshVaultState();
+                notify('Coffre local déverrouillé pour cette session.');
+              } catch (e) {
+                notify(errorMessage(e), true);
+              }
+            }}
           />
         )}
         {view === 'settings' && (
@@ -1385,6 +1651,9 @@ export function App() {
             update={(p) => void updatePrefs(p)}
             clear={clear}
             notify={notify}
+            vaultEnabled={vaultEnabled}
+            vaultUnlocked={vaultUnlocked}
+            onVaultChanged={refreshVaultState}
           />
         )}
         {view === 'convert' && (
@@ -1564,6 +1833,14 @@ export function App() {
                 openTools={() => setModal('tools')}
                 getText={getText}
                 notify={notify}
+                nightReading={prefs.nightReading}
+                toggleNightReading={() =>
+                  void updatePrefs({ ...prefs, nightReading: !prefs.nightReading })
+                }
+                profile={prefs.profile}
+                openPalette={() => setPaletteOpen(true)}
+                openReplaceKey={openReplaceKey}
+                openObjectsKey={openObjectsKey}
               />
               {ai && (
                 <AiPanel
@@ -1598,6 +1875,7 @@ export function App() {
             </Empty>
           ))}
       </div>
+      {paletteOpen && <CommandPalette items={paletteItems} close={() => setPaletteOpen(false)} />}
       {modal === 'tools' && workspace && (
         <Modal title={t('Outils du document')} close={() => setModal(null)}>
           {toolsContent}

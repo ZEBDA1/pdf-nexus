@@ -35,9 +35,9 @@ _Éditez, organisez, convertissez, signez et analysez vos PDF directement dans G
 
 <br />
 
-## Mise à jour 1.8.0 — compression locale, comparaison et outils PDF
+## Mise à jour 1.8.0 — compression étendue, coffre chiffré, OCR persistant et confort
 
-Compression locale des images (préréglages Léger / Équilibré / Fort / Personnalisé, taille cible, aperçu avant/après, compression par lot en ZIP, fusion des flux dupliqués et nettoyage des objets orphelins), comparaison de deux PDF (différences textuelles et visuelles), édition des métadonnées, numérotation des pages / en-têtes / pieds de page / Bates, gestion des signets et extraction d’images en ZIP. Voir [l’historique des versions](docs/CHANGELOG.md).
+Compression locale exécutée en Worker (`OffscreenCanvas`, préréglages Léger / Équilibré / Fort / Personnalisé, profils _Dépôt administratif < 2 Mio_, _E-mail < 5 Mio_ et _Archivage fidèle_, prise en charge des masques `SMask`, `DeviceCMYK`, `ICCBased`, prédicteurs PNG/TIFF, niveaux de gris et gestion des métadonnées), comparaison textuelle/visuelle de deux PDF, édition des métadonnées, numérotation / Bates, signets, extraction d’images en ZIP, redressement de scans (de-skew), couche OCR persistante dans les brouillons et exports rééditables, consentement explicite avant stockage IndexedDB, coffre local chiffré facultatif (`AES-GCM` 256 bits / `PBKDF2`), palette de commandes (`Ctrl+K`), mode lecture nocturne, tampons datés et profil d’identité local. Voir [l’historique des versions](docs/CHANGELOG.md).
 
 ## Correctif local 1.7.1 — lisibilité du code distribué
 

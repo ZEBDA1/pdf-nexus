@@ -12,6 +12,7 @@ import {
   compressToTarget,
   type CompressResult,
 } from '../pdf/compress';
+import { compressInWorker } from '../workers/client';
 import type { RunJob } from './Converter';
 
 type PresetKey = keyof typeof PRESETS | 'custom';
@@ -32,6 +33,8 @@ export function CompressPanel({
     [scale, setScale] = useState(PRESETS.balanced.scale),
     [quality, setQuality] = useState(PRESETS.balanced.quality),
     [target, setTarget] = useState(''),
+    [grayscale, setGrayscale] = useState(false),
+    [stripMetadata, setStripMetadata] = useState(true),
     [preview, setPreview] = useState<{ name: string; before: number; result: CompressResult }>();
   function choose(key: PresetKey) {
     setPreset(key);
@@ -40,27 +43,67 @@ export function CompressPanel({
       setQuality(PRESETS[key].quality);
     }
   }
-  const maxDimension = preset === 'custom' ? undefined : PRESETS[preset].maxDimension;
-  async function compressOne(bytes: Uint8Array, signal: AbortSignal) {
-    const targetMb = parseFloat(target.replace(',', '.'));
-    if (targetMb > 0)
+  async function compressOne(
+    bytes: Uint8Array,
+    signal: AbortSignal,
+    progress?: (n: number) => void,
+    override?: { target?: string; preset?: PresetKey; stripMetadata?: boolean },
+  ) {
+    const activeTarget = override?.target ?? target;
+    const activePreset = override?.preset ?? preset;
+    const activeStrip = override?.stripMetadata ?? stripMetadata;
+    const activeMaxDim = activePreset === 'custom' ? undefined : PRESETS[activePreset].maxDimension;
+    const activeScale = activePreset === 'custom' ? scale : PRESETS[activePreset].scale;
+    const activeQuality = activePreset === 'custom' ? quality : PRESETS[activePreset].quality;
+    const targetMb = parseFloat(activeTarget.replace(',', '.'));
+    const targetBytes = targetMb > 0 ? targetMb * 1024 * 1024 : undefined;
+    if (typeof Worker !== 'undefined') {
+      return compressInWorker(
+        bytes,
+        {
+          scale: activeScale,
+          quality: activeQuality,
+          maxDimension: activeMaxDim,
+          targetBytes,
+          grayscale,
+          stripMetadata: activeStrip,
+        },
+        signal,
+        progress,
+      );
+    }
+    if (targetBytes)
       return compressToTarget(
         bytes,
-        targetMb * 1024 * 1024,
-        { encode: browserImageEncoder, maxDimension },
+        targetBytes,
+        {
+          encode: browserImageEncoder,
+          maxDimension: activeMaxDim,
+          grayscale,
+          stripMetadata: activeStrip,
+          onProgress: progress,
+        },
         signal,
       );
     return compressPdfImages(
       bytes,
-      { scale, quality, maxDimension, encode: browserImageEncoder },
+      {
+        scale: activeScale,
+        quality: activeQuality,
+        maxDimension: activeMaxDim,
+        grayscale,
+        stripMetadata: activeStrip,
+        onProgress: progress,
+        encode: browserImageEncoder,
+      },
       signal,
     );
   }
-  function analyse() {
+  function analyse(override?: { target?: string; preset?: PresetKey; stripMetadata?: boolean }) {
     setPreview(undefined);
     void run('Compression du PDF', async (signal, progress) => {
       const source = await current(signal);
-      const result = await compressOne(source.bytes, signal);
+      const result = await compressOne(source.bytes, signal, progress, override);
       progress(1);
       setPreview({ name: source.name, before: source.bytes.length, result });
     });
@@ -92,6 +135,37 @@ export function CompressPanel({
   return (
     <>
       <h3>{t('Compression')}</h3>
+      <div className="row compress-profiles" role="group" aria-label={t('Profils prêts à l’envoi')}>
+        <Button
+          disabled={locked}
+          onClick={() => {
+            setTarget('2');
+            analyse({ target: '2' });
+          }}
+        >
+          {t('Dépôt administratif (< 2 Mio)')}
+        </Button>
+        <Button
+          disabled={locked}
+          onClick={() => {
+            setTarget('5');
+            analyse({ target: '5' });
+          }}
+        >
+          {t('E-mail (< 5 Mio)')}
+        </Button>
+        <Button
+          disabled={locked}
+          onClick={() => {
+            setTarget('');
+            choose('light');
+            setStripMetadata(false);
+            analyse({ target: '', preset: 'light', stripMetadata: false });
+          }}
+        >
+          {t('Archivage fidèle')}
+        </Button>
+      </div>
       <div className="row">
         <select
           aria-label={t('Préréglage de compression')}
@@ -137,8 +211,24 @@ export function CompressPanel({
           </label>
         </>
       )}
+      <label className="check-field">
+        <input
+          type="checkbox"
+          checked={stripMetadata}
+          onChange={(e) => setStripMetadata(e.target.checked)}
+        />{' '}
+        {t('Supprimer les métadonnées (Info / XMP)')}
+      </label>
+      <label className="check-field">
+        <input
+          type="checkbox"
+          checked={grayscale}
+          onChange={(e) => setGrayscale(e.target.checked)}
+        />{' '}
+        {t('Convertir les images en niveaux de gris')}
+      </label>
       <div className="row">
-        <Button disabled={locked} onClick={analyse}>
+        <Button disabled={locked} onClick={() => analyse()}>
           <Minimize2 size={17} />
           {t('Calculer la compression')}
         </Button>
@@ -184,7 +274,7 @@ export function CompressPanel({
       )}
       <p className="notice">
         {t(
-          'Compression locale : seules les images sont recompressées ; texte, liens et formulaires sont conservés. Aucun fichier n’est envoyé. Le résultat n’est jamais plus gros que l’original.',
+          'Compression locale : seules les images sont recompressées dans un worker dédié ; texte, liens et formulaires sont conservés. Aucun fichier n’est envoyé. Le résultat n’est jamais plus gros que l’original.',
         )}
       </p>
     </>

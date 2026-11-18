@@ -10,7 +10,14 @@ for (const channel of ['msedge', 'chrome'] as const) {
     try {
       const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
       await worker.evaluate(() =>
-        chrome.storage.local.set({ preferences: { setupCompleted: true } }),
+        chrome.storage.local.set({
+          preferences: {
+            setupCompleted: true,
+            storageConsent: 'accepted',
+            autoSave: true,
+            remember: true,
+          },
+        }),
       );
       const id = worker.url().split('/')[2],
         page = await context.newPage(),

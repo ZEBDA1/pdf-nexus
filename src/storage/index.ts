@@ -1,5 +1,13 @@
 import { openDB } from 'idb';
 import { defaultPreferences, type Preferences, type ChatMessage, type Source } from '../types';
+import {
+  clearVaultConfig,
+  decryptFromVault,
+  encryptForVault,
+  isEncryptedEnvelope,
+  isVaultEnabled,
+  isVaultUnlocked,
+} from './vault';
 export const db = () =>
   openDB('pdf-nexus', 3, {
     upgrade(d) {
@@ -19,6 +27,9 @@ export interface Recent {
   opened: number;
   pages: number;
 }
+export function canPersist(p: Preferences): boolean {
+  return p.storageConsent === 'accepted';
+}
 export async function getPreferences(): Promise<Preferences> {
   const data =
     typeof chrome !== 'undefined' && chrome.storage
@@ -32,18 +43,51 @@ export async function savePreferences(p: Preferences) {
   else localStorage.setItem('nexus-preferences', JSON.stringify(p));
 }
 export async function listRecent(): Promise<Recent[]> {
+  if ((await isVaultEnabled()) && !isVaultUnlocked()) return [];
   const d = await db();
   try {
-    return (await d.getAll('recent')).sort((a, b) => b.opened - a.opened);
+    const raw = (await d.getAll('recent')) as Array<
+      Record<string, unknown> & { id: string; size: number; opened: number; pages: number }
+    >;
+    const list: Recent[] = [];
+    for (const r of raw) {
+      if (isEncryptedEnvelope(r.payload)) {
+        const dec = await decryptFromVault<{ name: string; bytes: Uint8Array }>(r.payload);
+        list.push({
+          id: r.id,
+          name: dec.name,
+          bytes: dec.bytes,
+          size: r.size,
+          opened: r.opened,
+          pages: r.pages,
+        });
+      } else {
+        list.push(r as unknown as Recent);
+      }
+    }
+    return list.sort((a, b) => b.opened - a.opened);
   } finally {
     d.close();
   }
 }
 export async function remember(source: Source, pages: number, id: string) {
+  const vault = await isVaultEnabled();
+  if (vault && !isVaultUnlocked())
+    throw new Error('Le coffre local est verrouillé. Déverrouillez-le pour enregistrer.');
+  const payload = vault
+    ? await encryptForVault({ name: source.name, bytes: source.bytes })
+    : undefined;
   const d = await db();
   try {
-    await d.put('recent', { ...source, id, pages, size: source.bytes.length, opened: Date.now() });
-    const list = ((await d.getAll('recent')) as Recent[]).sort((a, b) => b.opened - a.opened);
+    await d.put(
+      'recent',
+      vault
+        ? { id, size: source.bytes.length, opened: Date.now(), pages, payload }
+        : { ...source, id, pages, size: source.bytes.length, opened: Date.now() },
+    );
+    const list = (
+      (await d.getAll('recent')) as Array<{ id: string; size: number; opened: number }>
+    ).sort((a, b) => b.opened - a.opened);
     let total = 0;
     for (let i = 0; i < list.length; i++) {
       total += list[i].size;
@@ -63,17 +107,25 @@ export async function removeRecent(id: string) {
   }
 }
 export async function getChat(id: string): Promise<ChatMessage[]> {
+  if ((await isVaultEnabled()) && !isVaultUnlocked()) return [];
   const d = await db();
   try {
-    return (await d.get('chat', id)) ?? [];
+    const value = await d.get('chat', id);
+    if (isEncryptedEnvelope(value)) return await decryptFromVault<ChatMessage[]>(value);
+    return (value as ChatMessage[]) ?? [];
   } finally {
     d.close();
   }
 }
 export async function saveChat(id: string, m: ChatMessage[]) {
+  const vault = await isVaultEnabled();
+  if (vault && !isVaultUnlocked())
+    throw new Error('Le coffre local est verrouillé. Déverrouillez-le pour enregistrer.');
+  const sliced = m.slice(-60);
+  const stored = vault ? await encryptForVault(sliced) : sliced;
   const d = await db();
   try {
-    await d.put('chat', m.slice(-60), id);
+    await d.put('chat', stored, id);
   } finally {
     d.close();
   }
@@ -89,6 +141,7 @@ export async function clearData() {
   } finally {
     d.close();
   }
+  await clearVaultConfig();
   await setKey('');
 }
 let memoryKey = '';

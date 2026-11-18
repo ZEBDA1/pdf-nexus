@@ -3,7 +3,15 @@ import { PDFDocument } from 'pdf-lib';
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() =>
-    localStorage.setItem('nexus-preferences', JSON.stringify({ setupCompleted: true })),
+    localStorage.setItem(
+      'nexus-preferences',
+      JSON.stringify({
+        setupCompleted: true,
+        storageConsent: 'accepted',
+        autoSave: true,
+        remember: true,
+      }),
+    ),
   );
   await page.goto('/editor.html');
 });

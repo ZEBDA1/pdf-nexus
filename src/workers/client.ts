@@ -11,6 +11,17 @@ import type { ReplacementCandidate } from '../pdf/replace';
 import { getLanguage } from '../i18n';
 import type { RestoredSource } from '../pdf/editable';
 import type { Box } from '../pdf/checkboxes';
+import type { CompressResult } from '../pdf/compress';
+
+export interface CompressWorkerOptions {
+  scale: number;
+  quality: number;
+  maxDimension?: number;
+  targetBytes?: number;
+  grayscale?: boolean;
+  stripMetadata?: boolean;
+}
+
 export type AuxiliaryRequest =
   | {
       kind: 'replace';
@@ -22,6 +33,7 @@ export type AuxiliaryRequest =
       font: Uint8Array;
     }
   | { kind: 'restore'; source: Source }
+  | { kind: 'compress'; bytes: Uint8Array; options: CompressWorkerOptions }
   | { kind: 'boxes'; data: Uint8ClampedArray; width: number; height: number; scale: number };
 export interface RasterPage {
   bytes: Uint8Array;
@@ -57,6 +69,18 @@ export function replacementPreview(
   signal?: AbortSignal,
 ) {
   return workerJob<{ candidates: ReplacementCandidate[]; excluded: number }>(request, signal);
+}
+export function compressInWorker(
+  bytes: Uint8Array,
+  options: CompressWorkerOptions,
+  signal?: AbortSignal,
+  progress?: (n: number) => void,
+) {
+  return workerJob<CompressResult & { reached?: boolean }>(
+    { kind: 'compress', bytes, options },
+    signal,
+    progress,
+  );
 }
 export function findPrintedBoxes(
   data: Uint8ClampedArray,
