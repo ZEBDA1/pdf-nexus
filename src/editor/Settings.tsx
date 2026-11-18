@@ -435,6 +435,7 @@ export function Settings({
                   ? 'accepted'
                   : (prefs.storageConsent ?? 'declined'),
                 autoSave: e.target.checked,
+                remember: persisted ? prefs.remember : false,
               })
             }
           />
@@ -455,6 +456,7 @@ export function Settings({
                 storageConsent: e.target.checked
                   ? 'accepted'
                   : (prefs.storageConsent ?? 'declined'),
+                autoSave: persisted ? prefs.autoSave : false,
                 remember: e.target.checked,
               })
             }

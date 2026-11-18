@@ -111,4 +111,19 @@ describe('Régression Red Titanium et Blue Argon', () => {
       }
     });
   }
+
+  it('respecte les règles Chrome Web Store dans manifest.json et PRIVACY.md', async () => {
+    const manifest = JSON.parse(await readFile('public/manifest.json', 'utf8'));
+    expect(manifest.manifest_version).toBe(3);
+    expect(manifest.permissions).toEqual(['storage', 'activeTab']);
+    expect(manifest.host_permissions).toBeUndefined();
+    expect(manifest.web_accessible_resources).toBeUndefined();
+    expect(manifest.optional_permissions).not.toContain('declarativeNetRequestWithHostAccess');
+    expect(manifest.content_security_policy.extension_pages).not.toContain("'unsafe-eval'");
+    expect(manifest.content_security_policy.extension_pages).toContain("'wasm-unsafe-eval'");
+
+    const privacy = await readFile('docs/PRIVACY.md', 'utf8');
+    expect(privacy).toContain('Chrome Web Store User Data Policy');
+    expect(privacy).toContain('Limited Use');
+  });
 });

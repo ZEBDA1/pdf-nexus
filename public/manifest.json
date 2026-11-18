@@ -34,11 +34,5 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'none'; frame-src 'self' blob:; connect-src 'self' https: http: file:; worker-src 'self';"
   },
-  "optional_permissions": ["webRequest", "downloads"],
-  "web_accessible_resources": [
-    {
-      "resources": ["editor.html"],
-      "matches": ["https://*/*", "http://*/*"]
-    }
-  ]
+  "optional_permissions": ["webRequest", "downloads"]
 }

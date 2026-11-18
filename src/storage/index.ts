@@ -130,6 +130,14 @@ export async function saveChat(id: string, m: ChatMessage[]) {
     d.close();
   }
 }
+export async function deleteChat(id: string) {
+  const d = await db();
+  try {
+    await d.delete('chat', id);
+  } finally {
+    d.close();
+  }
+}
 export async function clearData() {
   const { clearDrafts } = await import('./drafts');
   await clearDrafts();

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Sparkles, X, Send, Copy, FileDown, Plus, Trash2, Settings2 } from 'lucide-react';
 import { Button, IconButton } from '../components/ui';
 import type { ChatMessage, PageText, Preferences } from '../types';
-import { getChat, saveChat } from '../storage';
+import { canPersist, deleteChat, getChat, saveChat } from '../storage';
 import { answer, validateEndpoint } from '../ai';
 import { download, errorMessage, parsePages } from '../utils/files';
 export function AiPanel({
@@ -36,14 +36,16 @@ export function AiPanel({
   useEffect(() => {
     let live = true;
     setMessages([]);
-    if (prefs.remember)
-      void getChat(id).then((m) => {
-        if (live) setMessages(m);
-      });
+    if (canPersist(prefs) && prefs.remember)
+      void getChat(id)
+        .then((m) => {
+          if (live) setMessages(m);
+        })
+        .catch(() => {});
     return () => {
       live = false;
     };
-  }, [id]);
+  }, [id, prefs.remember, prefs.storageConsent]);
   useEffect(() => () => controller?.abort(), [controller]);
   async function ask(prompt = question) {
     if (!prompt.trim() || busy) return;
@@ -87,7 +89,7 @@ export function AiPanel({
         { role: 'assistant' as const, content, date: Date.now(), mode: prefs.aiMode },
       ];
       setMessages(result);
-      if (prefs.remember) await saveChat(id, result);
+      if (canPersist(prefs) && prefs.remember) await saveChat(id, result);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -248,7 +250,7 @@ export function AiPanel({
             disabled={busy}
             onClick={() => {
               setMessages([]);
-              void saveChat(id, []);
+              void deleteChat(id).catch(() => {});
             }}
           >
             <Trash2 size={15} />
